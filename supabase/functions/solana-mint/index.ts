@@ -84,56 +84,7 @@ serve(async (req)=>{
         }
       });
     }
-    // Initialize Solana connection
-    console.log('Connecting to Solana devnet...');
-    const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
-    // Get mint authority keypair from environment
-    const mintAuthorityKeypairJson = Deno.env.get('SOLANA_MINT_AUTHORITY_KEYPAIR');
-    if (!mintAuthorityKeypairJson) {
-      console.error('No mint authority keypair found');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Mint authority keypair not configured'
-      }), {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    console.log('Parsing mint authority keypair...');
-    const mintAuthorityKeypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(mintAuthorityKeypairJson)));
-    console.log('Mint authority public key:', mintAuthorityKeypair.publicKey.toBase58());
-    // Convert addresses to PublicKey objects
-    const mintPublicKey = new PublicKey(mintAddress);
-    const recipientPublicKey = new PublicKey(recipientAddress);
-    console.log('Creating/getting associated token account...');
-    // Get or create associated token account for recipient
-    const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(connection, mintAuthorityKeypair, mintPublicKey, recipientPublicKey);
-    console.log('Recipient token account:', recipientTokenAccount.address.toBase58());
-    // Calculate mint amount with decimals
-    const decimals = tokenConfig.decimals || 9;
-    const mintAmountWithDecimals = mintAmount * Math.pow(10, decimals);
-    console.log('Minting tokens...', {
-      mintAmount,
-      decimals,
-      mintAmountWithDecimals
-    });
-    // Mint tokens to recipient
-    const mintTxSignature = await mintTo(connection, mintAuthorityKeypair, mintPublicKey, recipientTokenAccount.address, mintAuthorityKeypair, mintAmountWithDecimals // amount
-    );
-    console.log('Mint transaction signature:', mintTxSignature);
-    // Get user ID from recipient wallet address
-    const userId = await getUserIdFromWallet(supabase, recipientAddress);
-    console.log('Found user ID:', userId);
-    // Award MINT to user using the database function
-    console.log('Updating user MINT balance...');
-    const { error: awardError } = await supabase.rpc('award_mint_to_user', {
-      p_user_id: userId,
-      p_mint_amount: parseFloat(mintAmount),
-      p_activity_type: activityType
-    });
+   
     if (awardError) {
       console.error('Error updating user MINT balance:', awardError);
     // Don't fail the whole operation since the tokens were minted successfully
