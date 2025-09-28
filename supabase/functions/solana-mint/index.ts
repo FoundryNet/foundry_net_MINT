@@ -1,132 +1,97 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { Connection, PublicKey, Keypair } from 'https://esm.sh/@solana/web3.js@1.95.2';
-import { getOrCreateAssociatedTokenAccount, mintTo } from 'https://esm.sh/@solana/spl-token@0.4.8';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction } from "https://esm.sh/@solana/web3.js@1.95.2";
+import { getOrCreateAssociatedTokenAccount, createTransferCheckedInstruction } from "https://esm.sh/@solana/spl-token@0.4.8";
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-serve(async (req)=>{
-  console.log('=== REAL MINT TOKEN REQUEST ===');
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    console.log('CORS preflight - returning headers');
-    return new Response('ok', {
-      headers: corsHeaders
-    });
-  }
+
+function getSupabaseClient() {
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+}
+
+function makeConnection() {
+  const rpc = Deno.env.get("SOLANA_RPC") ?? "https://api.mainnet-beta.solana.com";
+  return new Connection(rpc, "confirmed");
+}
+
+function loadTreasuryKeypair() {
+  const secret = Deno.env.get("HOT_WALLET");
+  if (!secret) throw new Error("HOT_WALLET secret not set");
+  return Keypair.fromSecretKey(new Uint8Array(JSON.parse(secret)));
+}
+
+function rewardPerJob() {
+  return Number(Deno.env.get("Reward_Per_Job") ?? "3");
+}
+
+function mintDecimals() {
+  return Number(Deno.env.get("Mint_Decimals") ?? "9");
+}
+
+function dailyLimitPerMachine() {
+  return Number(Deno.env.get("Daily_Limit_Per_Machine") ?? "100");
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
   try {
-    console.log('Initializing Supabase client...');
-    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    console.log('Parsing request body...');
-    const requestBody = await req.json();
-    console.log('Request body:', requestBody);
-    const { recipientAddress, mintAmount, activityType = 'job_completion', machineId } = requestBody;
-    // Validate required parameters
-    if (!recipientAddress || !mintAmount) {
-      console.error('Missing required parameters:', {
-        recipientAddress,
-        mintAmount
-      });
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Missing required parameters: recipientAddress or mintAmount'
-      }), {
-        status: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
+    const supabase = getSupabaseClient();
+    const body = await req.json();
+    const { machine_uuid, job_hash, recipient_wallet, completion_proof } = body;
+
+    if (!machine_uuid || !job_hash || !recipient_wallet || !completion_proof) {
+      return new Response(JSON.stringify({ success: false, error: "machine_uuid, job_hash, recipient_wallet, completion_proof required" }), { status: 400, headers: corsHeaders });
     }
-    // Get token configuration from database
-    console.log('Fetching token configuration...');
-    const { data: configData, error: configError } = await supabase.from('solana_config').select('config_value').eq('config_key', 'mint_token_config').single();
-    if (configError || !configData) {
-      console.error('Failed to fetch token config:', configError);
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Token configuration not found'
-      }), {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    const tokenConfig = configData.config_value;
-    console.log('Token config:', tokenConfig);
-    if (!tokenConfig.enabled) {
-      console.log('Token system is disabled');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'MINT token system is disabled'
-      }), {
-        status: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    const mintAddress = tokenConfig.mint_address;
-    if (!mintAddress) {
-      console.error('No mint address configured');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'No mint address configured'
-      }), {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-   
-    if (awardError) {
-      console.error('Error updating user MINT balance:', awardError);
-    // Don't fail the whole operation since the tokens were minted successfully
-    }
-    console.log('Successfully minted and awarded MINT tokens');
-    // Return success response with transaction details
-    const response = {
-      success: true,
-      transactionHash: mintTxSignature,
-      recipientAddress,
-      mintAmount: parseFloat(mintAmount),
-      mintAddress,
-      tokenAccount: recipientTokenAccount.address.toBase58(),
-      activityType,
-      message: 'MINT tokens minted successfully on Solana devnet'
-    };
-    console.log('Returning success response:', response);
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      }
-    });
-  } catch (error) {
-    console.error('Error in solana-mint function:', error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: `Minting failed: ${error.message}`
-    }), {
-      status: 500,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      }
-    });
+
+    // 1) Fetch job
+    const { data: jobRow } = await supabase.from("jobs").select("*").eq("job_hash", job_hash).single();
+    if (!jobRow) return new Response(JSON.stringify({ error: "job not found; submit the job first" }), { status: 404, headers: corsHeaders });
+    if (jobRow.status === "completed") return new Response(JSON.stringify({ success: true, tx_signature: jobRow.tx_signature }), { status: 200, headers: corsHeaders });
+
+    // 2) Verify machine
+    const { data: machine } = await supabase.from("machines").select("machine_pubkey").eq("machine_uuid", machine_uuid).single();
+    if (!machine) return new Response(JSON.stringify({ error: "machine not registered" }), { status: 404, headers: corsHeaders });
+
+    // 3) Verify signature
+    const message = `${job_hash}|${recipient_wallet}|${completion_proof.timestamp}`;
+    const verified = nacl.sign.detached.verify(
+      new TextEncoder().encode(message),
+      bs58.decode(completion_proof.signature_base58),
+      bs58.decode(machine.machine_pubkey)
+    );
+    if (!verified) return new Response(JSON.stringify({ error: "signature verification failed" }), { status: 401, headers: corsHeaders });
+
+    // 4) Rate limit
+    const reward = rewardPerJob();
+    const decimals = mintDecimals();
+    const rewardBaseUnits = BigInt(Math.floor(reward * Math.pow(10, decimals)));
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const { data: recent } = await supabase.from("payouts").select("amount").eq("machine_uuid", machine_uuid).gte("created_at", since);
+    const totalLast24 = (recent ?? []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    if (totalLast24 + reward > dailyLimitPerMachine()) return new Response(JSON.stringify({ error: "daily limit exceeded for machine" }), { status: 429, headers: corsHeaders });
+
+    // 5) Solana transfer
+    const connection = makeConnection();
+    const treasury = loadTreasuryKeypair();
+    const mintPub = new PublicKey(Deno.env.get("Mint_Address")!);
+    const treasuryAta = await getOrCreateAssociatedTokenAccount(connection, treasury, mintPub, treasury.publicKey);
+    const recipientPub = new PublicKey(recipient_wallet);
+    const recipientAta = await getOrCreateAssociatedTokenAccount(connection, treasury, mintPub, recipientPub);
+    const transferIx = createTransferCheckedInstruction(treasuryAta.address, mintPub, recipientAta.address, treasury.publicKey, rewardBaseUnits, decimals);
+    const tx = new Transaction().add(transferIx);
+    const txSig = await sendAndConfirmTransaction(connection, tx, [treasury], { skipPreflight: false, commitment: "confirmed" });
+
+    // 6) Update DB
+    await supabase.from("payouts").insert({ job_hash, machine_uuid, recipient: recipient_wallet, amount: reward, mint_address: mintPub.toBase58(), tx_signature: txSig });
+    await supabase.from("jobs").update({ status: "completed", completed_at: new Date().toISOString(), tx_signature: txSig, recipient_wallet }).eq("job_hash", job_hash);
+
+    return new Response(JSON.stringify({ success: true, tx_signature: txSig, solscan: `https://solscan.io/tx/${txSig}?cluster=mainnet` }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (err: any) {
+    console.error("complete-job error:", err);
+    return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
-async function getUserIdFromWallet(supabase, walletAddress) {
-  const { data, error } = await supabase.from('solana_wallets').select('user_id').eq('public_key', walletAddress).eq('is_primary', true).single();
-  if (error || !data) {
-    throw new Error(`No user found for wallet: ${walletAddress}`);
-  }
-  return data.user_id;
-}
