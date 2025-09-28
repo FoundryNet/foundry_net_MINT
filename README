@@ -1,0 +1,116 @@
+FoundryNet - Turn Your Machines Into Economic Actors
+FoundryNet enables manufacturing equipment to earn MINT tokens for verified productive work. Connect any machine—3D printers, CNCs, robots, industrial equipment—to the first tokenized economy built on real-world manufacturing data.
+What Is This?
+A simple API that lets machines earn cryptocurrency for completing jobs. No complex integrations, no firmware modifications—just prove your machine did work and receive MINT tokens automatically.
+Quick Start
+1. Clone and Install
+bashgit clone https://github.com/FoundryNet/foundry_net_MINT.git
+cd foundry_net_MINT
+npm install tweetnacl bs58 uuid
+2. Set Your API Endpoint
+Edit foundry-client.js and replace the default API URL with your FoundryNet endpoint:
+javascriptconst client = new FoundryClient('https://your-project.supabase.co/functions/v1');
+3. Generate Machine Credentials (First Time Only)
+javascriptimport { FoundryClient } from './foundry-client.js';
+
+const client = new FoundryClient('https://your-project.supabase.co/functions/v1');
+
+// Generate new machine identity
+const identity = client.generateMachineId();
+console.log('Save these credentials securely:');
+console.log('UUID:', identity.machineUuid);
+console.log('Public Key:', identity.publicKey);
+console.log('Secret Key:', identity.secretKey); // KEEP THIS SECRET!
+
+// Register with FoundryNet
+await client.registerMachine({ 
+  type: '3d-printer', 
+  model: 'Your Machine Model' 
+});
+4. Earn MINT for Completed Jobs
+javascript// Load your saved credentials
+client.loadMachineId('your-uuid', 'your-secret-key');
+
+// When a job completes
+const jobHash = 'unique-job-identifier'; // Your job ID
+const walletAddress = 'YOUR_SOLANA_WALLET_ADDRESS';
+
+const result = await client.completeJob(jobHash, walletAddress);
+console.log('Transaction:', result.solscan);
+console.log('Earned:', result.reward, 'MINT');
+How It Works
+
+Register Once: Generate cryptographic credentials and register your machine
+Complete Jobs: Your machine signs proof of job completion
+Earn MINT: Backend verifies signature and automatically transfers tokens
+
+Integration Examples
+Basic Job Completion Hook
+javascriptfunction onJobComplete(jobId) {
+  const foundry = new FoundryClient();
+  foundry.loadMachineId(SAVED_UUID, SAVED_SECRET);
+  foundry.completeJob(jobId, MY_WALLET)
+    .then(result => console.log('Earned MINT:', result))
+    .catch(err => console.error('Payment failed:', err));
+}
+G-code Hook (3D Printers/CNCs)
+javascript// Hook into your machine's completion event
+machine.on('job_complete', (gcodeFile) => {
+  const jobHash = hashGcode(gcodeFile);
+  foundryClient.completeJob(jobHash, myWallet);
+});
+OctoPrint Plugin Integration
+javascript// In your OctoPrint plugin
+function onPrintDone(filename) {
+  const jobHash = `print_${filename}_${Date.now()}`;
+  foundryClient.completeJob(jobHash, userWallet);
+}
+Security Features
+
+Cryptographic Verification: Ed25519 signatures ensure only your machine can claim rewards
+Anti-Fraud: Daily limits and duplicate job detection prevent abuse
+Physics-Bound: Real manufacturing constraints make spoofing difficult
+
+API Reference
+FoundryClient(apiUrl)
+Initialize client with FoundryNet API endpoint
+generateMachineId()
+Create new machine identity with UUID and ed25519 keypair
+loadMachineId(uuid, secretKey)
+Load existing machine credentials
+registerMachine(metadata)
+Register machine with FoundryNet (one-time setup)
+completeJob(jobHash, recipientWallet)
+Prove job completion and receive MINT payment
+Economics
+
+Reward: 3 MINT per completed job (Year 1)
+Halving: Annual reduction in per-job rewards
+Daily Limit: 100 MINT per machine per 24 hours
+Network Fee: 0.25% protocol fee on transactions
+
+Supported Machine Types
+
+3D Printers (FDM, SLA, SLS)
+CNC Mills and Lathes
+Laser Cutters
+Industrial Robots
+Pick and Place Machines
+Any equipment that completes discrete jobs
+
+Troubleshooting
+Common Issues
+"Machine not registered" error
+
+Ensure you called registerMachine() first
+Check that machine UUID matches exactly
+
+"Signature verification failed"
+
+Verify secret key is loaded correctly
+Make sure job hash and wallet address are exact
+
+"Daily limit exceeded"
+
+Each machine limited to 100 MINT per 24 hours
+Wait until limit resets
