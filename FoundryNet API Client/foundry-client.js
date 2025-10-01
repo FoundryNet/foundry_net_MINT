@@ -13,6 +13,21 @@ class FoundryClient {
     this.debug = config.debug || false;
   }
 
+// Quick start helper (add this method to FoundryClient class)
+static async quickStart(walletAddress, metadata = {}) {
+  const client = new FoundryClient({
+    apiUrl: 'https://api.foundrynet.io/v1',
+    debug: true
+  });
+  
+  await client.init(metadata);
+  console.log('✅ Machine initialized and ready to earn MINT');
+  console.log(`Wallet: ${walletAddress}`);
+  
+  return client;
+}
+  
+  
   // Logging helper
   log(level, message, data = {}) {
     if (!this.debug && level === 'debug') return;
