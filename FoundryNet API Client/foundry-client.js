@@ -4,21 +4,28 @@ import bs58 from 'bs58';
 import { v4 as uuidv4 } from 'uuid';
 
 class FoundryClient {
-  constructor(config = {}) {
-    this.apiUrl = config.apiUrl || 'https://your-supabase-url.supabase.co/functions/v1';
-    this.machineUuid = null;
-    this.keyPair = null;
-    this.retryAttempts = config.retryAttempts || 3;
-    this.retryDelay = config.retryDelay || 2000; // ms
-    this.debug = config.debug || false;
-  }
+    constructor(config = {}) {
+      this.apiUrl = config.apiUrl || 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts';
+      this.machineUuid = null;
+      this.keyPair = null;
+      this.retryAttempts = config.retryAttempts || 3;
+      this.retryDelay = config.retryDelay || 2000; // ms
+      this.debug = config.debug || false;
+  
+      this.headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+      };
+    }
 
 // Quick start helper (add this method to FoundryClient class)
 static async quickStart(walletAddress, metadata = {}) {
   const client = new FoundryClient({
-    apiUrl: 'https://api.foundrynet.io/v1',
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
     debug: true
   });
+  
+
   
   await client.init(metadata);
   console.log('✅ Machine initialized and ready to earn MINT');
@@ -145,99 +152,88 @@ static async quickStart(walletAddress, metadata = {}) {
   }
 
   // Initialize machine (load or generate credentials)
+  
   async init(metadata = {}) {
-    // Try loading existing credentials
-    if (this.loadCredentials()) {
-      this.log('info', 'Using existing machine credentials');
-      return { existing: true, machineUuid: this.machineUuid };
-    }
-    
-    // Generate new credentials
     const identity = this.generateMachineId();
     this.saveCredentials(identity);
-    
-    // Register with FoundryNet
-    await this.registerMachine(metadata);
-    
-    return { existing: false, identity };
+    const registration = await this.registerMachine(metadata);
+    return registration;
   }
-
-  // Register machine with FoundryNet
   async registerMachine(metadata = {}) {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Generate or load machine ID first');
     }
-
+  
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/register-machine`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.headers,  // ✅ use Authorization header
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           machine_pubkey_base58: bs58.encode(this.keyPair.publicKey),
           metadata
         })
       });
-
+  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Registration failed: ${error}`);
       }
-
+  
       const result = await response.json();
       this.log('info', 'Machine registered successfully');
       return result;
     }, 'Machine registration');
   }
-
+  
   // Submit job start
   async submitJob(jobHash, payload = {}) {
     if (!this.machineUuid) {
       throw new Error('Machine not initialized');
     }
-
+  
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/submit-job`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.headers,  // ✅ use Authorization header
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
           payload
         })
       });
-
+  
       if (response.status === 409) {
         this.log('warn', 'Job already exists', { jobHash });
         return { success: true, duplicate: true, job_hash: jobHash };
       }
-
+  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job submission failed: ${error}`);
       }
-
+  
       const result = await response.json();
       this.log('debug', 'Job submitted', { jobHash });
       return result;
     }, 'Job submission');
   }
-
+  
   // Complete a job and earn MINT
   async completeJob(jobHash, recipientWallet) {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Machine not initialized');
     }
-
+  
     const timestamp = new Date().toISOString();
     const message = `${jobHash}|${recipientWallet}|${timestamp}`;
     const messageBytes = new TextEncoder().encode(message);
     const signature = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
-
+  
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/complete-job`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.headers,  // ✅ use Authorization header
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
@@ -248,27 +244,30 @@ static async quickStart(walletAddress, metadata = {}) {
           }
         })
       });
-
-      if (response.status === 503) {
-        const error = await response.json();
-        if (error.error.includes('maintenance')) {
-          this.log('warn', 'System in maintenance mode, will retry', { jobHash });
-          throw new Error('MAINTENANCE'); // Trigger retry
-        }
-      }
-
-      if (response.status === 429) {
-        const error = await response.json();
-        this.log('warn', 'Rate limit reached', error);
-        return { success: false, error: 'rate_limited', details: error };
-      }
-
+  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job completion failed: ${error}`);
       }
+  
+      const text = await response.text();
+console.log('Raw response:', text);
 
-      const result = await response.json();
+
+if (!response.ok) {
+    const error = await response.text();
+    console.log('Raw error response:', error); // ADD THIS LINE
+    throw new Error(`Job completion failed: ${error}`);
+  }
+
+let result;
+try {
+  result = JSON.parse(text);
+} catch(e) {
+  console.error('Failed to parse JSON:', e);
+  throw new Error(`Job completion failed: ${text}`);
+}
+
       this.log('info', 'Job completed - MINT earned!', { 
         jobHash, 
         reward: result.reward,
@@ -278,6 +277,7 @@ static async quickStart(walletAddress, metadata = {}) {
       return result;
     }, 'Job completion');
   }
+  
 
   // Check system health
   async checkHealth() {
@@ -323,7 +323,7 @@ static async quickStart(walletAddress, metadata = {}) {
 // Example 1: OctoPrint Plugin
 async function octoPrintIntegration() {
   const client = new FoundryClient({
-    apiUrl: 'https://your-supabase-url.supabase.co/functions/v1',
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
     debug: true
   });
 
@@ -350,7 +350,7 @@ async function octoPrintIntegration() {
 // Example 2: Klipper Moonraker Integration
 async function klipperIntegration() {
   const client = new FoundryClient({
-    apiUrl: 'https://your-supabase-url.supabase.co/functions/v1'
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
   });
 
   await client.init({
@@ -375,7 +375,7 @@ async function klipperIntegration() {
 // Example 3: GRBL/CNC Integration
 async function grblIntegration() {
   const client = new FoundryClient({
-    apiUrl: 'https://your-supabase-url.supabase.co/functions/v1'
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
   });
 
   await client.init({
@@ -399,7 +399,7 @@ async function grblIntegration() {
 // Example 4: Custom DIY Machine
 async function customMachineIntegration() {
   const client = new FoundryClient({
-    apiUrl: 'https://your-supabase-url.supabase.co/functions/v1'
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
   });
 
   await client.init({
@@ -427,7 +427,7 @@ async function customMachineIntegration() {
 // Example 5: Simple Script (Any Machine)
 async function simpleScriptExample() {
   const client = new FoundryClient({
-    apiUrl: 'https://your-supabase-url.supabase.co/functions/v1',
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
     debug: true
   });
 
