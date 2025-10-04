@@ -347,3 +347,56 @@ if (typeof module !== 'undefined' && module.exports) {
 
 // For ES6 modules
 export { FoundryClient };
+
+// Example 6: AI Agent Integration
+async function aiAgentIntegration() {
+  const client = new FoundryClient({
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
+  });
+
+  await client.init({
+    type: 'ai-agent',
+    model: 'Autonomous Manufacturing Agent',
+    firmware: 'Agent Runtime v1.0'
+  });
+
+  // Agent receives manufacturing request
+  async function handleManufacturingRequest(spec) {
+    // Agent finds available machine capacity
+    const machineId = await findAvailableMachine(spec);
+    
+    // Generate job hash from specification
+    const jobHash = client.generateJobHash(spec.partName);
+    
+    // Submit job to manufacturing network
+    await client.submitJob(jobHash, {
+      job_type: 'agent-coordinated',
+      specification: spec,
+      priority: spec.urgency,
+      estimated_cost: spec.budget
+    });
+    
+    // Agent monitors job progress...
+    // When physical machine completes work:
+    const result = await client.completeJob(jobHash, agentWallet);
+    
+    // Agent receives MINT payment for coordinating manufacturing
+    return {
+      completed: true,
+      cost: result.reward,
+      txHash: result.tx_signature
+    };
+  }
+
+  // Agent can batch multiple manufacturing jobs
+  async function batchManufacturing(orders) {
+    const jobs = await Promise.all(
+      orders.map(order => handleManufacturingRequest(order))
+    );
+    
+    const totalCost = jobs.reduce((sum, job) => sum + job.cost, 0);
+    console.log(`Batch completed: ${jobs.length} parts manufactured for ${totalCost} MINT`);
+    
+    return jobs;
+  }
+}
