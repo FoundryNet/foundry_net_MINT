@@ -1,101 +1,69 @@
-// foundry-client.js - Production client with retry logic and error handling
+// foundry-client.js - Production client
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
 
 class FoundryClient {
-    constructor(config = {}) {
-      this.apiUrl = config.apiUrl || 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts';
-      this.machineUuid = null;
-      this.keyPair = null;
-      this.retryAttempts = config.retryAttempts || 3;
-      this.retryDelay = config.retryDelay || 2000; // ms
-      this.debug = config.debug || false;
-  
-      this.headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
-      };
-    }
+  constructor(config = {}) {
+    this.apiUrl = config.apiUrl || 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts';
+    this.machineUuid = null;
+    this.keyPair = null;
+    this.retryAttempts = config.retryAttempts || 3;
+    this.retryDelay = config.retryDelay || 2000;
+    this.debug = config.debug || false;
+  }
 
-// Quick start helper (add this method to FoundryClient class)
-static async quickStart(walletAddress, metadata = {}) {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
-    debug: true
-  });
-  
-
-  
-  await client.init(metadata);
-  console.log('✅ Machine initialized and ready to earn MINT');
-  console.log(`Wallet: ${walletAddress}`);
-  
-  return client;
-}
-  
-  
-  // Logging helper
   log(level, message, data = {}) {
     if (!this.debug && level === 'debug') return;
     const timestamp = new Date().toISOString();
     console[level](`[FoundryNet ${timestamp}] ${message}`, data);
   }
 
-  // Retry wrapper for network requests
   async withRetry(fn, context = '') {
     let lastError;
-    
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
       try {
         return await fn();
       } catch (error) {
         lastError = error;
         this.log('warn', `${context} failed (attempt ${attempt}/${this.retryAttempts})`, { error: error.message });
-        
         if (attempt < this.retryAttempts) {
-          const delay = this.retryDelay * attempt; // Exponential backoff
+          const delay = this.retryDelay * attempt;
           this.log('debug', `Retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
-    
     this.log('error', `${context} failed after ${this.retryAttempts} attempts`, { error: lastError.message });
     throw lastError;
   }
 
-  // Generate new machine identity
   generateMachineId() {
     this.machineUuid = uuidv4();
     this.keyPair = nacl.sign.keyPair();
-    
     const identity = {
       machineUuid: this.machineUuid,
       publicKey: bs58.encode(this.keyPair.publicKey),
       secretKey: bs58.encode(this.keyPair.secretKey)
     };
-    
     this.log('info', 'Generated new machine identity', { 
       machineUuid: identity.machineUuid,
       publicKey: identity.publicKey 
     });
-    
     return identity;
   }
 
-  // Load existing machine identity
   loadMachineId(machineUuid, secretKeyBase58) {
     try {
       this.machineUuid = machineUuid;
       const secretKeyBytes = bs58.decode(secretKeyBase58);
       const fullKeyPair = nacl.sign.keyPair.fromSecretKey(secretKeyBytes);
-      
       this.keyPair = {
         publicKey: fullKeyPair.publicKey,
         secretKey: fullKeyPair.secretKey
       };
-      
       this.log('info', 'Loaded machine identity', { machineUuid });
       return true;
     } catch (error) {
@@ -104,136 +72,98 @@ static async quickStart(walletAddress, metadata = {}) {
     }
   }
 
-  // Save credentials to file (Node.js) or localStorage (browser)
   saveCredentials(identity) {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      // Browser environment
-      localStorage.setItem('foundry_machine_uuid', identity.machineUuid);
-      localStorage.setItem('foundry_secret_key', identity.secretKey);
-      this.log('debug', 'Credentials saved to localStorage');
-    } else if (typeof require !== 'undefined') {
-      // Node.js environment
-      const fs = require('fs');
-      const path = require('path');
-      const credPath = path.join(process.cwd(), '.foundry_credentials.json');
-      
-      fs.writeFileSync(credPath, JSON.stringify({
-        machineUuid: identity.machineUuid,
-        secretKey: identity.secretKey
-      }, null, 2));
-      
-      this.log('debug', 'Credentials saved to .foundry_credentials.json');
-    }
+    const credPath = path.join(process.cwd(), '.foundry_credentials.json');
+    fs.writeFileSync(credPath, JSON.stringify({
+      machineUuid: identity.machineUuid,
+      secretKey: identity.secretKey
+    }, null, 2));
+    this.log('debug', 'Credentials saved');
   }
 
-  // Load credentials from storage
   loadCredentials() {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const machineUuid = localStorage.getItem('foundry_machine_uuid');
-      const secretKey = localStorage.getItem('foundry_secret_key');
-      
-      if (machineUuid && secretKey) {
-        this.loadMachineId(machineUuid, secretKey);
-        return true;
-      }
-    } else if (typeof require !== 'undefined') {
-      const fs = require('fs');
-      const path = require('path');
+    try {
       const credPath = path.join(process.cwd(), '.foundry_credentials.json');
-      
       if (fs.existsSync(credPath)) {
         const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
         this.loadMachineId(creds.machineUuid, creds.secretKey);
         return true;
       }
-    }
-    
+    } catch {}
     return false;
   }
 
-  // Initialize machine (load or generate credentials)
-  
   async init(metadata = {}) {
+    if (this.loadCredentials()) {
+      this.log('info', 'Using existing machine credentials');
+      return { existing: true, machineUuid: this.machineUuid };
+    }
     const identity = this.generateMachineId();
     this.saveCredentials(identity);
-    const registration = await this.registerMachine(metadata);
-    return registration;
+    await this.registerMachine(metadata);
+    return { existing: false, identity };
   }
+
   async registerMachine(metadata = {}) {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Generate or load machine ID first');
     }
-  
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/register-machine`, {
         method: 'POST',
-        headers: this.headers,  // ✅ use Authorization header
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           machine_pubkey_base58: bs58.encode(this.keyPair.publicKey),
           metadata
         })
       });
-  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Registration failed: ${error}`);
       }
-  
       const result = await response.json();
       this.log('info', 'Machine registered successfully');
       return result;
     }, 'Machine registration');
   }
-  
-  // Submit job start
+
   async submitJob(jobHash, payload = {}) {
-    if (!this.machineUuid) {
-      throw new Error('Machine not initialized');
-    }
-  
+    if (!this.machineUuid) throw new Error('Machine not initialized');
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/submit-job`, {
         method: 'POST',
-        headers: this.headers,  // ✅ use Authorization header
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
           payload
         })
       });
-  
       if (response.status === 409) {
         this.log('warn', 'Job already exists', { jobHash });
         return { success: true, duplicate: true, job_hash: jobHash };
       }
-  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job submission failed: ${error}`);
       }
-  
       const result = await response.json();
       this.log('debug', 'Job submitted', { jobHash });
       return result;
     }, 'Job submission');
   }
-  
-  // Complete a job and earn MINT
+
   async completeJob(jobHash, recipientWallet) {
-    if (!this.machineUuid || !this.keyPair) {
-      throw new Error('Machine not initialized');
-    }
-  
+    if (!this.machineUuid || !this.keyPair) throw new Error('Machine not initialized');
     const timestamp = new Date().toISOString();
     const message = `${jobHash}|${recipientWallet}|${timestamp}`;
     const messageBytes = new TextEncoder().encode(message);
     const signature = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
-  
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/complete-job`, {
         method: 'POST',
-        headers: this.headers,  // ✅ use Authorization header
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
@@ -244,62 +174,22 @@ static async quickStart(walletAddress, metadata = {}) {
           }
         })
       });
-  
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job completion failed: ${error}`);
       }
-  
-      const text = await response.text();
-console.log('Raw response:', text);
-
-
-if (!response.ok) {
-    const error = await response.text();
-    console.log('Raw error response:', error); // ADD THIS LINE
-    throw new Error(`Job completion failed: ${error}`);
-  }
-
-let result;
-try {
-  result = JSON.parse(text);
-} catch(e) {
-  console.error('Failed to parse JSON:', e);
-  throw new Error(`Job completion failed: ${text}`);
-}
-
+      const result = await response.json();
       this.log('info', 'Job completed - MINT earned!', { 
         jobHash, 
         reward: result.reward,
         txSignature: result.tx_signature 
       });
-      
       return result;
     }, 'Job completion');
   }
-  
 
-  // Check system health
-  async checkHealth() {
-    try {
-      const response = await fetch(`${this.apiUrl}/health`);
-      const health = await response.json();
-      
-      if (health.status !== 'healthy') {
-        this.log('warn', 'System health check warning', health);
-      }
-      
-      return health;
-    } catch (error) {
-      this.log('error', 'Health check failed', { error: error.message });
-      return { status: 'error', error: error.message };
-    }
-  }
-
-  // Generate a deterministic job hash
   generateJobHash(filename, additionalData = '') {
     const data = `${this.machineUuid}|${filename}|${Date.now()}|${additionalData}`;
-    // Simple hash for browser/Node compatibility
     let hash = 0;
     for (let i = 0; i < data.length; i++) {
       const char = data.charCodeAt(i);
@@ -308,13 +198,9 @@ try {
     }
     return `job_${Math.abs(hash).toString(36)}_${Date.now()}`;
   }
-
-  // Convenience method: submit and complete job in one call
-  async processJob(jobHash, recipientWallet, payload = {}) {
-    await this.submitJob(jobHash, payload);
-    return await this.completeJob(jobHash, recipientWallet);
-  }
 }
+
+export { FoundryClient };
 
 // ============================================================================
 // INTEGRATION EXAMPLES FOR DIFFERENT FIRMWARE/MACHINES
