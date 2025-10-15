@@ -400,3 +400,53 @@ async function aiAgentIntegration() {
     return jobs;
   }
 }
+
+// Example 7: Fleet/Industrial Robotics Integration
+async function fleetRobotIntegration() {
+  const client = new FoundryClient({
+    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
+    debug: true
+  });
+
+  // Imagine a small fleet of 3 pick-and-place robots
+  const fleet = [
+    { name: 'RobotA', type: 'pick-place', model: 'PP-1000', firmware: 'Arduino+Custom' },
+    { name: 'RobotB', type: 'pick-place', model: 'PP-2000', firmware: 'Arduino+Custom' },
+    { name: 'RobotC', type: 'pick-place', model: 'PP-3000', firmware: 'Arduino+Custom' }
+  ];
+
+  // Initialize each robot in the fleet
+  for (const robot of fleet) {
+    await client.init({
+      type: robot.type,
+      model: robot.model,
+      firmware: robot.firmware
+    });
+    console.log(`✅ ${robot.name} initialized with machine UUID ${client.machineUuid}`);
+  }
+
+  // Example workflow: assign and complete jobs per robot
+  async function runJob(robotName, taskId) {
+    const jobHash = client.generateJobHash(taskId);
+    console.log(`[${robotName}] Submitting job: ${jobHash}`);
+
+    await client.submitJob(jobHash, {
+      job_type: 'assembly',
+      task_id: taskId,
+      operation: 'component_placement'
+    });
+
+    // Simulate robot completing the task (replace with real sensor/event hook)
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const result = await client.completeJob(jobHash, 'ROBOT_WALLET_ADDRESS');
+    console.log(`[${robotName}] Job completed! Earned MINT: ${result.reward}, TX: ${result.tx_signature}`);
+  }
+
+  // Run jobs for each robot in parallel
+  const tasks = fleet.map((robot, idx) => runJob(robot.name, `task_${idx + 1}`));
+  await Promise.all(tasks);
+
+  console.log('✅ All fleet jobs completed');
+}
+
