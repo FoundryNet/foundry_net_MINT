@@ -255,8 +255,9 @@ Jobs are queued and will process when treasury refills
 Check status updates
 
 
-Getting a Wallet
-New to crypto? Here's how to receive MINT:
+Getting a Wallet?
+New to crypto? 
+Here's how to receive MINT:
 
 Install Phantom Wallet (browser extension)
 Create new wallet
@@ -266,8 +267,8 @@ Use that address in completeJob()
 MINT tokens appear instantly in your wallet after job completion.
 
 Vision
-FoundryNet is building payment infrastructure for autonomous manufacturing.
-We're starting simple: machines prove work happened, get paid instantly. The protocol handles identity, verification, and settlement. Everything else—quality systems, marketplaces, reputation—gets built on top.
+FoundryNet is building payment infrastructure for autonomous industry.
+We're starting simple: machines prove work happened, get paid instantly. The protocol handles identity, verification, and settlement. Everything else such as quality systems, marketplaces, reputation—gets built on top.
 This is infrastructure for when AI agents coordinate supply chains and manufacturing capacity becomes programmable.
 
 Tokenomics
