@@ -203,250 +203,303 @@ class FoundryClient {
 export { FoundryClient };
 
 // ============================================================================
-// INTEGRATION EXAMPLES FOR DIFFERENT FIRMWARE/MACHINES
+// INTEGRATION EXAMPLES FOR DIFFERENT AGENTS, SOFTWARE, AND MACHINES
+// ============================================================================
+//
+// These examples demonstrate how to connect various types of agents,
+// workflows, and physical devices to the FoundryClient for automatic,
+// on-chain MINT rewards. The patterns are consistent:
+//   1. Initialize FoundryClient
+//   2. Submit a job hash when work starts
+//   3. Complete the job when verified finished
+//
+// ============================================================================
+// PART 1 — SOFTWARE & AGENT INTEGRATIONS
 // ============================================================================
 
-// Example 1: OctoPrint Plugin
-async function octoPrintIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
-    debug: true
-  });
 
-  await client.init({
-    type: '3d-printer',
-    model: 'Ender 3 V2',
-    firmware: 'OctoPrint 1.8.0'
-  });
+/**
+ * 1️⃣ LangChain Agent (Autonomous Task Execution)
+ * Integrates Foundry rewards into a LangChain pipeline.
+ * Each run of the agent earns MINT based on completion complexity.
+ */
+async function exampleLangChainAgent(query) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io', debug: true });
+  await client.init({ type: 'agent', model: 'gpt-4-langchain' });
 
-  // Hook into OctoPrint events
-  // octoprint.plugins.foundrynet.on_print_started
-  const jobHash = client.generateJobHash('benchy.gcode');
-  await client.submitJob(jobHash, {
-    job_type: 'print',
-    filename: 'benchy.gcode',
-    estimated_time: 3600
-  });
+  const jobHash = client.generateJobHash('langchain_query', query);
+  await client.submitJob(jobHash, { job_type: 'langchain_agent_query', query });
 
-  // octoprint.plugins.foundrynet.on_print_done
-  const result = await client.completeJob(jobHash, 'YOUR_WALLET');
-  console.log('Earned MINT:', result.reward);
+  // Perform the AI reasoning task
+  const response = await runLangChainAgent(query);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: response });
+  return response;
 }
 
-// Example 2: Klipper Moonraker Integration
-async function klipperIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
-  });
 
-  await client.init({
-    type: '3d-printer',
-    model: 'Voron 2.4',
-    firmware: 'Klipper + Moonraker'
-  });
+/**
+ * 2️⃣ LangGraph Workflow (Composable AI Chain)
+ * Tracks complex AI graph flows; each node triggers a separate job if needed.
+ */
+async function exampleLangGraphWorkflow(workflowInput) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io', debug: false });
+  await client.init({ type: 'workflow', model: 'langgraph' });
 
-  // Listen to Moonraker webhooks
-  // on print_started webhook
-  const jobHash = client.generateJobHash(printFilename);
-  await client.submitJob(jobHash, {
-    job_type: 'print',
-    filename: printFilename,
-    layer_count: metadata.layer_count
-  });
+  const jobHash = client.generateJobHash('langgraph_workflow', workflowInput);
+  await client.submitJob(jobHash, { job_type: 'langgraph', input: workflowInput });
 
-  // on print_complete webhook (success only)
-  await client.completeJob(jobHash, userWallet);
+  const output = await runLangGraph(workflowInput);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: output });
+  return output;
 }
 
-// Example 3: GRBL/CNC Integration
-async function grblIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
-  });
 
-  await client.init({
-    type: 'cnc-mill',
-    model: 'Shapeoko 3',
-    firmware: 'GRBL 1.1'
-  });
+/**
+ * 3️⃣ N8N Automation Flow
+ * Wraps any node in N8N to automatically record job starts/completions.
+ */
+async function exampleN8NAutomation(taskData) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'automation', model: 'n8n_flow' });
 
-  // When G-code starts (after homing)
-  const jobHash = client.generateJobHash('part_001.nc');
-  await client.submitJob(jobHash, {
-    job_type: 'cnc',
-    program: 'part_001.nc',
-    operation: 'roughing'
-  });
+  const jobHash = client.generateJobHash('n8n_task', taskData);
+  await client.submitJob(jobHash, { job_type: 'automation', metadata: taskData });
 
-  // When M2/M30 program end received
-  await client.completeJob(jobHash, userWallet);
+  // Execute N8N task
+  const result = await executeN8NWorkflow(taskData);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: result });
+  return result;
 }
 
-// Example 4: Custom DIY Machine
-async function customMachineIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
-  });
 
-  await client.init({
-    type: 'custom',
-    model: 'Pick-and-Place Robot',
-    firmware: 'Arduino + Custom'
-  });
+/**
+ * 4️⃣ On-Chain Payment Verification Bot
+ * Runs continuously, verifying on-chain payments or wallet activity.
+ */
+async function exampleOnchainVerification(txId) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'verifier', model: 'solana-scanner' });
 
-  // Your custom job logic
-  function onTaskStart(taskId) {
-    const jobHash = client.generateJobHash(taskId);
-    client.submitJob(jobHash, {
-      job_type: 'robot',
-      task_id: taskId,
-      operation: 'component_placement'
-    });
-    return jobHash;
+  const jobHash = client.generateJobHash('onchain_verification', txId);
+  await client.submitJob(jobHash, { job_type: 'onchain_verification', txId });
+
+  const verified = await checkTransactionOnChain(txId);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { verified });
+  return verified;
+}
+
+
+/**
+ * 5️⃣ GPU Training Job Tracker
+ * Rewards model training runs or compute-intensive ML jobs.
+ */
+async function exampleGpuTrainingJob(config) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'training', model: config.model });
+
+  const jobHash = client.generateJobHash('gpu_training', config);
+  await client.submitJob(jobHash, { job_type: 'gpu_training', params: config });
+
+  const metrics = await runModelTraining(config);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { metrics });
+  return metrics;
+}
+
+
+/**
+ * 6️⃣ Batch Data Processor
+ * Ideal for indexing, ETL pipelines, and large async job batches.
+ */
+async function exampleBatchProcessor(batchData) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'batch_processor', model: 'data-indexer' });
+
+  const jobHash = client.generateJobHash('batch_process', batchData);
+  await client.submitJob(jobHash, { job_type: 'data_batch', size: batchData.length });
+
+  const processed = await runDataPipeline(batchData);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { processed });
+  return processed;
+}
+
+
+
+// ============================================================================
+// PART 2 — FIRMWARE & MACHINE INTEGRATIONS
+// ============================================================================
+
+
+/**
+ * 7️⃣ OctoPrint 3D Printer Integration
+ * Hooks into print events (start/done) to reward machine work.
+ */
+async function exampleOctoPrintIntegration(printJob) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'machine', model: 'octoprint' });
+
+  const jobHash = client.generateJobHash('3d_print', printJob.file);
+  await client.submitJob(jobHash, { job_type: '3d_print', details: printJob });
+
+  // Simulate or hook into OctoPrint’s event loop
+  await waitForPrintCompletion(printJob);
+
+  await client.completeJob(jobHash, printJob.wallet, { status: 'success' });
+}
+
+
+/**
+ * 8️⃣ Klipper + Moonraker Integration
+ * Integrates directly with Moonraker WebSocket to trigger jobs on print completion.
+ */
+async function exampleKlipperIntegration(event) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'machine', model: 'klipper' });
+
+  const jobHash = client.generateJobHash('klipper_job', event.file);
+  await client.submitJob(jobHash, { job_type: 'klipper_print', event });
+
+  await waitForKlipperDone(event);
+
+  await client.completeJob(jobHash, event.wallet, { confirmed: true });
+}
+
+
+/**
+ * 9️⃣ GRBL / CNC Controller
+ * Rewards each toolpath completion or machine cycle.
+ */
+async function exampleGrblIntegration(toolpath) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'machine', model: 'grbl' });
+
+  const jobHash = client.generateJobHash('cnc_toolpath', toolpath.id);
+  await client.submitJob(jobHash, { job_type: 'cnc', steps: toolpath.steps });
+
+  await executeCncJob(toolpath);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { done: true });
+}
+
+
+/**
+ * 🔟 Custom DIY Machine
+ * For any Arduino, ESP32, or embedded system that can send HTTP.
+ */
+async function exampleCustomMachine(task) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'machine', model: 'custom-diy' });
+
+  const jobHash = client.generateJobHash('custom_task', task.id);
+  await client.submitJob(jobHash, { job_type: 'custom', task });
+
+  await runPhysicalAction(task);
+
+  await client.completeJob(jobHash, task.wallet, { verified: true });
+}
+
+
+/**
+ * 11️⃣ Simple Hardware Script
+ * Minimal template for Raspberry Pi, IoT, or PLC device.
+ */
+async function exampleSimpleHardwareScript(signal) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'machine', model: 'simple' });
+
+  const jobHash = client.generateJobHash('signal_job', signal.id);
+  await client.submitJob(jobHash, { job_type: 'signal', data: signal });
+
+  await waitForSensorConfirmation(signal);
+
+  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { confirmed: true });
+}
+
+
+/**
+ * 12️⃣ AI Manufacturing Agent
+ * Coordinates multiple machines; submits and finalizes jobs for each.
+ */
+async function exampleManufacturingAgent(batch) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'agent', model: 'factory-orchestrator' });
+
+  const jobHash = client.generateJobHash('factory_batch', batch.id);
+  await client.submitJob(jobHash, { job_type: 'factory_batch', machines: batch.machines });
+
+  for (const machine of batch.machines) {
+    await signalMachineStart(machine);
+    await signalMachineComplete(machine);
   }
 
-  function onTaskComplete(jobHash) {
-    client.completeJob(jobHash, userWallet);
+  await client.completeJob(jobHash, batch.wallet, { machines: batch.machines.length });
+}
+
+
+/**
+ * 13️⃣ Fleet Robotics Network
+ * Tracks distributed machine fleets via shared FoundryClient identity.
+ */
+async function exampleFleetRoboticsNetwork(fleet) {
+  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
+  await client.init({ type: 'fleet', model: 'robotics-network' });
+
+  for (const bot of fleet) {
+    const jobHash = client.generateJobHash('robot_task', bot.id);
+    await client.submitJob(jobHash, { job_type: 'robot', id: bot.id });
+
+    await runRobotTask(bot);
+
+    await client.completeJob(jobHash, bot.wallet, { task: 'done' });
   }
 }
 
-// Example 5: Simple Script (Any Machine)
-async function simpleScriptExample() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
-    debug: true
-  });
 
-  // First run: generates and saves credentials
-  await client.init({ type: 'test-machine' });
 
-  // Start job
-  const jobHash = `job_${Date.now()}`;
-  await client.submitJob(jobHash, { job_type: 'test' });
-  
-  console.log('Job started, doing work...');
-  
-  // Simulate work
-  await new Promise(resolve => setTimeout(resolve, 5000));
-  
-  // Complete job
-  const result = await client.completeJob(
-    jobHash, 
-    'YOUR_SOLANA_WALLET_ADDRESS'
-  );
-  
-  console.log('✅ Job completed!');
-  console.log(`Earned ${result.reward} MINT`);
-  console.log(`TX: ${result.solscan}`);
-}
+// ============================================================================
+// HELPER STUBS (mock implementations for illustration)
+// ============================================================================
 
-// For Node.js
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { FoundryClient };
-}
+async function runLangChainAgent(q) { return `response for ${q}`; }
+async function runLangGraph(i) { return `output for ${i}`; }
+async function executeN8NWorkflow(d) { return { success: true, ...d }; }
+async function checkTransactionOnChain(tx) { return { tx, verified: true }; }
+async function runModelTraining(c) { return { epochs: 3, accuracy: 0.92 }; }
+async function runDataPipeline(d) { return d.map(x => ({ processed: x })); }
+async function waitForPrintCompletion(p) { return new Promise(r => setTimeout(r, 1000)); }
+async function waitForKlipperDone(e) { return new Promise(r => setTimeout(r, 1000)); }
+async function executeCncJob(t) { return new Promise(r => setTimeout(r, 500)); }
+async function runPhysicalAction(t) { return new Promise(r => setTimeout(r, 500)); }
+async function waitForSensorConfirmation(s) { return new Promise(r => setTimeout(r, 500)); }
+async function signalMachineStart(m) { return new Promise(r => setTimeout(r, 300)); }
+async function signalMachineComplete(m) { return new Promise(r => setTimeout(r, 300)); }
+async function runRobotTask(b) { return new Promise(r => setTimeout(r, 400)); }
 
-// For ES6 modules
-export { FoundryClient };
 
-// Example 6: AI Agent Integration
-async function aiAgentIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts'
-  });
 
-  await client.init({
-    type: 'ai-agent',
-    model: 'Autonomous Manufacturing Agent',
-    firmware: 'Agent Runtime v1.0'
-  });
+// ============================================================================
+// EXPORTS
+// ============================================================================
+module.exports = {
+  // Software & Agents
+  exampleLangChainAgent,
+  exampleLangGraphWorkflow,
+  exampleN8NAutomation,
+  exampleOnchainVerification,
+  exampleGpuTrainingJob,
+  exampleBatchProcessor,
 
-  // Agent receives manufacturing request
-  async function handleManufacturingRequest(spec) {
-    // Agent finds available machine capacity
-    const machineId = await findAvailableMachine(spec);
-    
-    // Generate job hash from specification
-    const jobHash = client.generateJobHash(spec.partName);
-    
-    // Submit job to manufacturing network
-    await client.submitJob(jobHash, {
-      job_type: 'agent-coordinated',
-      specification: spec,
-      priority: spec.urgency,
-      estimated_cost: spec.budget
-    });
-    
-    // Agent monitors job progress...
-    // When physical machine completes work:
-    const result = await client.completeJob(jobHash, agentWallet);
-    
-    // Agent receives MINT payment for coordinating manufacturing
-    return {
-      completed: true,
-      cost: result.reward,
-      txHash: result.tx_signature
-    };
-  }
-
-  // Agent can batch multiple manufacturing jobs
-  async function batchManufacturing(orders) {
-    const jobs = await Promise.all(
-      orders.map(order => handleManufacturingRequest(order))
-    );
-    
-    const totalCost = jobs.reduce((sum, job) => sum + job.cost, 0);
-    console.log(`Batch completed: ${jobs.length} parts manufactured for ${totalCost} MINT`);
-    
-    return jobs;
-  }
-}
-
-// Example 7: Fleet/Industrial Robotics Integration
-async function fleetRobotIntegration() {
-  const client = new FoundryClient({
-    apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
-    debug: true
-  });
-
-  // Imagine a small fleet of 3 pick-and-place robots
-  const fleet = [
-    { name: 'RobotA', type: 'pick-place', model: 'PP-1000', firmware: 'Arduino+Custom' },
-    { name: 'RobotB', type: 'pick-place', model: 'PP-2000', firmware: 'Arduino+Custom' },
-    { name: 'RobotC', type: 'pick-place', model: 'PP-3000', firmware: 'Arduino+Custom' }
-  ];
-
-  // Initialize each robot in the fleet
-  for (const robot of fleet) {
-    await client.init({
-      type: robot.type,
-      model: robot.model,
-      firmware: robot.firmware
-    });
-    console.log(`✅ ${robot.name} initialized with machine UUID ${client.machineUuid}`);
-  }
-
-  // Example workflow: assign and complete jobs per robot
-  async function runJob(robotName, taskId) {
-    const jobHash = client.generateJobHash(taskId);
-    console.log(`[${robotName}] Submitting job: ${jobHash}`);
-
-    await client.submitJob(jobHash, {
-      job_type: 'assembly',
-      task_id: taskId,
-      operation: 'component_placement'
-    });
-
-    // Simulate robot completing the task (replace with real sensor/event hook)
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    const result = await client.completeJob(jobHash, 'ROBOT_WALLET_ADDRESS');
-    console.log(`[${robotName}] Job completed! Earned MINT: ${result.reward}, TX: ${result.tx_signature}`);
-  }
-
-  // Run jobs for each robot in parallel
-  const tasks = fleet.map((robot, idx) => runJob(robot.name, `task_${idx + 1}`));
-  await Promise.all(tasks);
-
-  console.log('✅ All fleet jobs completed');
-}
-
+  // Firmware & Machines
+  exampleOctoPrintIntegration,
+  exampleKlipperIntegration,
+  exampleGrblIntegration,
+  exampleCustomMachine,
+  exampleSimpleHardwareScript,
+  exampleManufacturingAgent,
+  exampleFleetRoboticsNetwork,
+};
