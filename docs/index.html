@@ -1,747 +1,259 @@
-// main.ts — Deno Edge Function with TBIP dynamic scaling + Autonomic Minting
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import nacl from "https://esm.sh/tweetnacl@1.0.3";
-import bs58 from "https://esm.sh/bs58@4.0.1";
-import { Connection, Keypair, PublicKey, sendAndConfirmTransaction, Transaction } from "https://esm.sh/@solana/web3.js@1.95.2";
-import { getOrCreateAssociatedTokenAccount, createTransferCheckedInstruction } from "https://esm.sh/@solana/spl-token@0.4.8";
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FoundryNet Monitor</title>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    window.supabase = createClient(
+      'https://lsijwmklicmqtuqxhgnu.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzaWp3bWtsaWNtcXR1cXhoZ251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5MTY3ODQsImV4cCI6MjA3MjQ5Mjc4NH0.0J560GHHrIaRYlwEYgYBIsWuiRgZFiITXKvc8rXvP0Y'
+    );
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Courier New', monospace; background:#000; color:#0f0; padding:20px; }
+    h1 { font-size:1.5rem; margin-bottom:20px; border-bottom:2px solid #0f0; padding-bottom:10px; }
+    h2 { font-size:1.2rem; margin:20px 0 10px 0; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px,1fr)); gap:15px; margin-bottom:20px; }
+    .metric { border:1px solid #0f0; padding:15px; background:#001100; }
+    .metric.critical { border-color:#f00; background:#110000; animation:pulse 2s ease-in-out infinite; }
+    .metric.warning { border-color:#ff0; background:#111100; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+    .metric-value{font-size:2rem;font-weight:bold;margin:10px 0;}
+    .metric-label{font-size:0.9rem; opacity:0.7;}
+    table{width:100%;border-collapse:collapse;margin-top:10px;}
+    th,td{text-align:left;padding:8px;border:1px solid #0f0;}
+    th{background:#001100;}
+    .timestamp{font-size:0.8rem;opacity:0.6;}
+    .alert-critical{border:1px solid #f00;background:#110000;padding:10px;margin:5px 0;color:#f00;}
+    .alert-warning{border:1px solid #ff0;background:#111100;padding:10px;margin:5px 0;color:#ff0;}
+    .alert-info{border:1px solid #0f0;background:#001100;padding:10px;margin:5px 0;color:#0f0;}
+    #refresh{position:fixed;top:20px;right:20px;background:#0f0;color:#000;border:none;padding:10px 20px;cursor:pointer;font-family:inherit;font-weight:bold;}
+    #refresh:hover{background:#0ff;}
+    .footer{margin-top:30px;padding-top:20px;border-top:1px solid #0f0;text-align:center;opacity:0.6;font-size:0.8rem;}
+    .loading{opacity:0.5;}
+  </style>
+</head>
+<body>
+  <button id="refresh" onclick="loadData()">REFRESH</button>
+  <h1>FOUNDRYNET LIVE MONITOR</h1>
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+  <div class="grid">
+    <div class="metric" id="treasuryMetric">
+      <div class="metric-label">TREASURY BALANCE</div>
+      <div class="metric-value" id="treasury">--</div>
+      <div class="metric-label">MINT / SOL</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">JOBS TODAY</div>
+      <div class="metric-value" id="jobsToday">--</div>
+      <div class="metric-label" id="completionRate">-- completion</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">ACTIVE MACHINES</div>
+      <div class="metric-value" id="machines">--</div>
+      <div class="metric-label">registered</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">MINT DISTRIBUTED</div>
+      <div class="metric-value" id="mintDist">--</div>
+      <div class="metric-label">all time</div>
+    </div>
+  </div>
 
-serve((req) => router(req));
+  <div class="grid">
+    <div class="metric">
+      <div class="metric-label">ACTIVITY RATIO</div>
+      <div class="metric-value" id="activityRatio">--</div>
+      <div class="metric-label">0.5-2.0 range</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">ACTIVITY MULTIPLIER</div>
+      <div class="metric-value" id="activityMult">--</div>
+      <div class="metric-label">reward adjustment</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">BURN RATE</div>
+      <div class="metric-value" id="burnRate">--</div>
+      <div class="metric-label">MINT/hour</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">RUNWAY</div>
+      <div class="metric-value" id="runway">--</div>
+      <div class="metric-label">days until depleted</div>
+    </div>
+  </div>
 
-/* ---------- Router ---------- */
-async function router(req: Request): Promise<Response> {
-  if (req.method === "OPTIONS")
-    return new Response(null, { headers: corsHeaders });
+  <h2>ACTIVE ALERTS</h2>
+  <div id="alerts">
+    <div class="alert-info">No active alerts</div>
+  </div>
 
-  const url = new URL(req.url);
-  try {
-    if (req.method === "POST" && url.pathname.endsWith("/register-machine")) {
-      return await handleRegisterMachine(req);
-    }
-    if (req.method === "POST" && url.pathname.endsWith("/submit-job")) {
-      return await handleSubmitJob(req);
-    }
-    if (req.method === "POST" && url.pathname.endsWith("/complete-job")) {
-      return await handleCompleteJob(req);
-    }
-    if (req.method === "POST" && url.pathname.endsWith("/autonomic-minting-check")) {
-      return await handleAutonomicMintingCheck(req);
-    }
-    if (req.method === "GET" && url.pathname.endsWith("/metrics")) {
-      return await handleGetMetrics(req);
-    }
-    return new Response("Not Found", { status: 404, headers: corsHeaders });
-  } catch (err) {
-    console.error("Edge function error:", err);
-    return new Response(
-      JSON.stringify({ error: String(err?.message ?? err) }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+  <h2>RECENT JOBS</h2>
+  <table id="jobsTable">
+    <thead>
+      <tr>
+        <th>JOB HASH</th>
+        <th>MACHINE</th>
+        <th>STATUS</th>
+        <th>REWARD</th>
+        <th>ACTIVITY</th>
+        <th>TX</th>
+        <th>TIME</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>RECENT MINTING EVENTS</h2>
+  <table id="mintingTable">
+    <thead>
+      <tr>
+        <th>AMOUNT MINTED</th>
+        <th>REASON</th>
+        <th>ACTIVITY RATIO</th>
+        <th>TIMESTAMP</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="footer">
+    <div id="lastUpdate">Last update: --</div>
+    <div>FoundryNet Protocol Monitor v1.0 | Activity-Responsive Settlement Layer</div>
+  </div>
+
+  <script type="module">
+    const SOLANA_RPC = 'https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa';
+    const HOT_WALLET = '85TZcUzW6ZdAvNdTnbq9ddJSditw8o4Yhm5gKN6UQ5vw';
+    const MINT_ADDRESS = '84hLMyG9cnC3Pd9LrWn4NtKMEhQHh4AvxbkcDMQtgem';
+    const MIN_BALANCE = 10;
+
+    async function getTreasuryBalances() {
+      try {
+        const connection = new solanaWeb3.Connection(SOLANA_RPC, 'confirmed');
+        const publicKey = new solanaWeb3.PublicKey(HOT_WALLET);
+        const solLamports = await connection.getBalance(publicKey);
+        const solBalance = solLamports / solanaWeb3.LAMPORTS_PER_SOL;
+        const mintPublicKey = new solanaWeb3.PublicKey(MINT_ADDRESS);
+        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, { mint: mintPublicKey });
+        const mintBalance = tokenAccounts.value.length > 0 ? tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount : 0;
+        return { sol: solBalance, mint: mintBalance };
+      } catch(err) {
+        console.error('Failed to fetch balances:', err);
+        return { sol: null, mint: null };
       }
-    );
-  }
-}
-
-/* ---------- Supabase / Helpers ---------- */
-function getSupabaseClient() {
-  const url = Deno.env.get("SUPABASE_URL") ?? "";
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  return createClient(url, key);
-}
-
-async function sendCriticalAlert(message: string, metadata: Record<string, any> = {}) {
-  try {
-    await fetch("https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/alert-ts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ severity: "critical", message, metadata }),
-    });
-  } catch (err) {
-    console.error("Failed to send alert:", err);
-  }
-}
-
-function parseJsonBody(req: Request) {
-  return req.json();
-}
-
-function makeConnection() {
-  const rpc = Deno.env.get("HELIUS_RPC_URL") || "https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa";
-  return new Connection(rpc, "confirmed");
-}
-
-function loadTreasuryKeypair() {
-  const secret = Deno.env.get("HOT_WALLET");
-  if (!secret) throw new Error("HOT_WALLET secret not set");
-  const arr = JSON.parse(secret);
-  return Keypair.fromSecretKey(new Uint8Array(arr));
-}
-
-function mintDecimals() {
-  return Number(Deno.env.get("MINT_DECIMALS") ?? "6");
-}
-
-function envNumber(name: string, fallback: number): number {
-  const v = Deno.env.get(name);
-  return v ? Number(v) : fallback;
-}
-
-/* ---------- Configuration ---------- */
-const CONFIG = {
-  REWARD_RATE_PER_SECOND: envNumber("REWARD_RATE_PER_SECOND", 0.005),
-  MIN_REWARD_PER_JOB: envNumber("MIN_REWARD_PER_JOB", 0.5),
-  MAX_REWARD_PER_JOB: envNumber("MAX_REWARD_PER_JOB", 10),
-  MIN_SECONDS_FOR_REWARD: envNumber("MIN_SECONDS_FOR_REWARD", 60),
-  MIN_LINEAR_SECONDS: envNumber("MIN_LINEAR_SECONDS", 600),
-  TAPER_START_SECONDS: envNumber("TAPER_START_SECONDS", 3600),
-  DAILY_LIMIT_PER_MACHINE: envNumber("DAILY_LIMIT_PER_MACHINE", 400),
-  TIER_MULTIPLIERS_RAW: Deno.env.get("TIER_MULTIPLIERS") ?? '{"robot":1.5,"printer":1.2,"cnc":1.8,"agent":1.0,"default":1.0}',
-  DYNAMIC_SCALE_SECONDS: envNumber("DYNAMIC_SCALE_SECONDS", 100000),
-  MINT_RUNWAY_DAYS_TARGET: envNumber("MINT_RUNWAY_DAYS_TARGET", 7),
-  MINT_MAX_PERCENT_PER_EVENT: envNumber("MINT_MAX_PERCENT_PER_EVENT", 1),
-  TOTAL_SUPPLY_MINT: envNumber("TOTAL_SUPPLY_MINT", 85_000_000),
-};
-
-let TIER_MULTIPLIERS: Record<string, number> = {};
-try {
-  TIER_MULTIPLIERS = JSON.parse(CONFIG.TIER_MULTIPLIERS_RAW);
-} catch (e) {
-  console.warn("Invalid TIER_MULTIPLIERS JSON, using defaults.");
-  TIER_MULTIPLIERS = {
-    robot: 1.5,
-    printer: 1.2,
-    cnc: 1.8,
-    agent: 1.0,
-    default: 1.0,
-  };
-}
-
-/* ---------- Reward Calculation ---------- */
-function calculateReward(durationSeconds: number, machineMeta: Record<string, any>): number {
-  const { REWARD_RATE_PER_SECOND, MIN_REWARD_PER_JOB, MAX_REWARD_PER_JOB, MIN_LINEAR_SECONDS, TAPER_START_SECONDS } = CONFIG;
-  const machineClass = machineMeta?.class ?? machineMeta?.type ?? "default";
-  const multiplier = TIER_MULTIPLIERS[machineClass] ?? 1.0;
-
-  let reward = 0;
-  if (durationSeconds < MIN_LINEAR_SECONDS) {
-    reward = MIN_REWARD_PER_JOB;
-  } else if (durationSeconds < TAPER_START_SECONDS) {
-    reward = durationSeconds * REWARD_RATE_PER_SECOND;
-  } else {
-    reward = TAPER_START_SECONDS * REWARD_RATE_PER_SECOND * Math.sqrt(durationSeconds / TAPER_START_SECONDS);
-  }
-
-  reward *= multiplier;
-  reward = Math.max(reward, MIN_REWARD_PER_JOB);
-  reward = Math.min(reward, MAX_REWARD_PER_JOB);
-  return Math.round(reward * 1e6) / 1e6;
-}
-
-function dailyLimitPerMachine(): number {
-  return CONFIG.DAILY_LIMIT_PER_MACHINE;
-}
-
-/* ---------- Activity Ratio & Dynamic Scaling ---------- */
-async function getNetworkSnapshot(supabase: any) {
-  try {
-    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("duration_seconds, machine_uuid")
-      .gte("completed_at", since)
-      .eq("status", "completed");
-
-    if (error) throw error;
-
-    const totalRuntime = (data ?? []).reduce((sum: number, j: any) => sum + Number(j.duration_seconds || 0), 0);
-    const activeNodes = new Set((data ?? []).map((j: any) => j.machine_uuid)).size;
-
-    const { data: snapshot } = await supabase
-      .from("metrics_snapshot")
-      .select("*")
-      .eq("id", 1)
-      .single()
-      .catch(() => ({ data: null }));
-
-    const prevTotal = Number(snapshot?.total_runtime_seconds || 0);
-    const prevJobs = Number(snapshot?.total_jobs_completed || 0);
-
-    const newTotals = {
-      total_runtime_seconds: prevTotal + totalRuntime,
-      total_jobs_completed: prevJobs + (data?.length || 0),
-      active_nodes: activeNodes,
-      updated_at: new Date().toISOString(),
-    };
-
-    await supabase.from("metrics_snapshot").upsert(
-      { id: 1, ...newTotals },
-      { onConflict: ["id"] }
-    );
-
-    return {
-      totalRuntime: newTotals.total_runtime_seconds,
-      activeNodes,
-      jobsCompleted: newTotals.total_jobs_completed,
-    };
-  } catch (err) {
-    console.error("getNetworkSnapshot failed:", err);
-    return { totalRuntime: 0, activeNodes: 0, jobsCompleted: 0 };
-  }
-}
-
-function calculateActivityRatio(snapshot: any): number {
-  if (snapshot.activeNodes === 0) return 1.0;
-  const baselineRuntime = 3600; // 1 hour baseline per node
-  const ratio = snapshot.totalRuntime / (snapshot.activeNodes * baselineRuntime);
-  return Math.max(0.5, Math.min(2.0, ratio));
-}
-
-function calculateActivityMultiplier(activityRatio: number): number {
-  // activity_ratio^(-0.4) — asymptotic self-correction
-  const bounded = Math.max(0.5, Math.min(2.0, activityRatio));
-  return Math.pow(bounded, -0.4);
-}
-
-function calculateDynamicReward(
-  durationSeconds: number,
-  machineMeta: Record<string, any>,
-  snapshot: any
-): { reward: number; dynamicFactor: number; activityRatio: number } {
-  const baseReward = calculateReward(durationSeconds, machineMeta);
-  const activityRatio = calculateActivityRatio(snapshot);
-  const activityMultiplier = calculateActivityMultiplier(activityRatio);
-
-  const adjusted = baseReward * activityMultiplier;
-  const rounded = Math.round(adjusted * 1e6) / 1e6;
-  const final = Math.max(CONFIG.MIN_REWARD_PER_JOB, Math.min(rounded, CONFIG.MAX_REWARD_PER_JOB));
-
-  return {
-    reward: final,
-    dynamicFactor: activityMultiplier,
-    activityRatio,
-  };
-}
-
-/* ---------- Autonomic Minting ---------- */
-async function calculate24hBurnRate(supabase: any): Promise<number> {
-  try {
-    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const { data } = await supabase
-      .from("payouts")
-      .select("amount")
-      .gte("created_at", since);
-
-    const total24h = (data ?? []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
-    return total24h / 24; // MINT per hour
-  } catch (err) {
-    console.error("calculate24hBurnRate failed:", err);
-    return 0;
-  }
-}
-
-async function getTreasuryBalance(
-  connection: any,
-  treasuryKeypair: Keypair,
-  mintAddress: string
-): Promise<number> {
-  try {
-    const mintPub = new PublicKey(mintAddress);
-    const ata = await getOrCreateAssociatedTokenAccount(connection, treasuryKeypair, mintPub, treasuryKeypair.publicKey);
-    const balance = await connection.getTokenAccountBalance(ata.address);
-    return balance.value.uiAmount ?? 0;
-  } catch (err) {
-    console.error("getTreasuryBalance failed:", err);
-    return 0;
-  }
-}
-
-function calculateMintAmount(
-  activityRatio: number,
-  burnRatePerHour: number,
-  targetRunwayDays: number
-): number {
-  const targetRunway = burnRatePerHour * 24 * targetRunwayDays;
-  const bounded = Math.max(0.5, Math.min(2.0, activityRatio));
-  const activityMultiplier = Math.pow(bounded, -0.4);
-  const amountToMint = targetRunway * activityMultiplier;
-  const maxPerEvent = CONFIG.TOTAL_SUPPLY_MINT * (CONFIG.MINT_MAX_PERCENT_PER_EVENT / 100);
-  return Math.min(amountToMint, maxPerEvent);
-}
-
-async function handleAutonomicMintingCheck(req: Request): Promise<Response> {
-  const supabase = getSupabaseClient();
-  try {
-    const mintAddress = Deno.env.get("MINT_ADDRESS");
-    if (!mintAddress) throw new Error("MINT_ADDRESS not set");
-
-    const connection = makeConnection();
-    const treasury = loadTreasuryKeypair();
-
-    const snapshot = await getNetworkSnapshot(supabase);
-    const burnRate = await calculate24hBurnRate(supabase);
-    const currentBalance = await getTreasuryBalance(connection, treasury, mintAddress);
-
-    const activityRatio = calculateActivityRatio(snapshot);
-    const runwayDays = burnRate > 0 ? currentBalance / (burnRate * 24) : 9999;
-
-    console.log(
-      `[MINTING CHECK] Balance: ${currentBalance.toFixed(2)} MINT, Runway: ${runwayDays.toFixed(1)} days, Activity: ${activityRatio.toFixed(2)}x`
-    );
-
-    if (runwayDays < CONFIG.MINT_RUNWAY_DAYS_TARGET && snapshot.activeNodes > 0) {
-      const toMint = calculateMintAmount(activityRatio, burnRate, CONFIG.MINT_RUNWAY_DAYS_TARGET);
-      console.log(`[MINTING] Triggered: ${toMint.toFixed(2)} MINT (activity: ${activityRatio.toFixed(2)}x)`);
-
-      await supabase.from("minting_events").insert({
-        amount: toMint,
-        reason: `runway_${runwayDays.toFixed(1)}_days`,
-        activity_ratio: activityRatio,
-        burn_rate_per_hour: burnRate,
-        treasury_balance_before: currentBalance,
-        timestamp: new Date().toISOString(),
-      });
-
-      return jsonResponse(
-        {
-          success: true,
-          minting_triggered: true,
-          amount_to_mint: toMint,
-          activity_ratio: activityRatio,
-          runway_days: runwayDays,
-        },
-        200
-      );
     }
 
-    return jsonResponse(
-      {
-        success: true,
-        minting_triggered: false,
-        runway_days: runwayDays,
-        threshold_days: CONFIG.MINT_RUNWAY_DAYS_TARGET,
-        activity_ratio: activityRatio,
-      },
-      200
-    );
-  } catch (err: any) {
-    console.error("autonomicMintingCheck failed:", err);
-    await sendCriticalAlert(`Minting check failed: ${err.message}`);
-    return jsonResponse({ error: err.message }, 500);
-  }
-}
+    async function loadData() {
+      document.getElementById('refresh').classList.add('loading');
+      try {
+        // Treasury balances
+        const balances = await getTreasuryBalances();
+        const treasuryEl = document.getElementById('treasury');
+        const treasuryMetric = document.getElementById('treasuryMetric');
 
-/* ---------- Endpoint Handlers ---------- */
-async function handleRegisterMachine(req: Request): Promise<Response> {
-  const supabase = getSupabaseClient();
-  const body = await parseJsonBody(req);
-  let { machine_uuid, machine_pubkey_base58, owner_user_id, metadata } = body;
+        if(balances.mint!==null && balances.sol!==null){
+          treasuryEl.textContent = `${balances.mint.toFixed(2)} MINT / ${balances.sol.toFixed(3)} SOL`;
+          if(balances.mint < MIN_BALANCE) treasuryMetric.classList.add('critical');
+          else if(balances.mint < MIN_BALANCE*2) treasuryMetric.classList.add('warning');
+          else treasuryMetric.classList.remove('critical','warning');
+        } else treasuryEl.textContent='ERROR';
 
-  if (!machine_pubkey_base58) {
-    return jsonResponse({ error: "machine_pubkey_base58 required" }, 400);
-  }
+        // Supabase queries
+        const { data: jobs, error: jobsError } = await window.supabase
+          .from('jobs')
+          .select('*')
+          .order('created_at',{ascending:false})
+          .limit(50);
+        if(jobsError){ console.error('Supabase error:', jobsError); return; }
 
-  if (!machine_uuid) {
-    machine_uuid = crypto.randomUUID();
-  }
+        const { count: machineCount } = await window.supabase
+          .from('machines')
+          .select('*',{count:'exact',head:true});
 
-  try {
-    const pubBytes = bs58.decode(machine_pubkey_base58);
-    if (!(pubBytes instanceof Uint8Array) || pubBytes.length !== 32) {
-      return jsonResponse({ error: "machine_pubkey_base58 must decode to 32 bytes" }, 400);
-    }
-  } catch (e) {
-    return jsonResponse({ error: "machine_pubkey_base58 invalid base58" }, 400);
-  }
+        const { data: payouts } = await window.supabase
+          .from('payouts')
+          .select('amount, activity_ratio');
 
-  const { error } = await supabase.from("machines").upsert(
-    {
-      machine_uuid,
-      machine_pubkey: machine_pubkey_base58,
-      owner_user_id: owner_user_id ?? null,
-      metadata: metadata ?? null,
-      registered_at: new Date().toISOString(),
-    },
-    { onConflict: ["machine_uuid"] }
-  );
+        const { data: mintingEvents } = await window.supabase
+          .from('minting_events')
+          .select('*')
+          .order('timestamp', {ascending:false})
+          .limit(10);
 
-  if (error) {
-    return jsonResponse({ error: error.message }, 500);
-  }
+        const totalMint = payouts?.reduce((sum,p)=>sum+Number(p.amount),0)||0;
+        const avgActivityRatio = payouts && payouts.length > 0 
+          ? payouts.reduce((sum,p)=>sum+Number(p.activity_ratio||1),0) / payouts.length
+          : 1.0;
 
-  return jsonResponse({ success: true, machine_uuid }, 200);
-}
+        // Calculate activity multiplier
+        const activityMult = Math.pow(Math.max(0.5, Math.min(2.0, avgActivityRatio)), -0.4);
+        const burnRate = payouts?.length > 0 ? totalMint / 24 : 0; // Approximate
+        const runway = burnRate > 0 && balances.mint !== null ? balances.mint / (burnRate * 24) : 999;
 
-async function handleSubmitJob(req: Request): Promise<Response> {
-  const supabase = getSupabaseClient();
-  const body = await parseJsonBody(req);
-  const { machine_uuid, job_hash, complexity, payload } = body;
+        // Today's jobs
+        const today = new Date().toISOString().split('T')[0];
+        const todayJobs = jobs.filter(j=>j.started_at?.startsWith(today))||[];
+        const completedToday = todayJobs.filter(j=>j.status==='completed').length;
 
-  if (!machine_uuid || !job_hash) {
-    return jsonResponse({ error: "machine_uuid and job_hash required" }, 400);
-  }
+        // Update metrics
+        document.getElementById('jobsToday').textContent = todayJobs.length;
+        document.getElementById('completionRate').textContent = `${todayJobs.length>0?Math.round((completedToday/todayJobs.length)*100):0}% completion`;
+        document.getElementById('machines').textContent = machineCount||0;
+        document.getElementById('mintDist').textContent = totalMint.toFixed(2);
+        document.getElementById('activityRatio').textContent = avgActivityRatio.toFixed(2);
+        document.getElementById('activityMult').textContent = activityMult.toFixed(3);
+        document.getElementById('burnRate').textContent = burnRate.toFixed(2);
+        document.getElementById('runway').textContent = runway.toFixed(1);
 
-  if (typeof complexity !== "number" || complexity < 0.5 || complexity > 2.0) {
-    return jsonResponse({ error: "complexity must be 0.5-2.0" }, 400);
-  }
+        // Jobs table
+        const tbody = document.querySelector('#jobsTable tbody');
+        tbody.innerHTML='';
+        todayJobs.slice(0,20).forEach(job=>{
+          const row=tbody.insertRow();
+          const statusColor = job.status==='completed'?'#0f0':job.status==='failed'?'#f00':'#ff0';
+          row.innerHTML=`
+            <td>${job.job_hash.substring(0,12)}...</td>
+            <td>${job.machine_uuid.substring(0,8)}...</td>
+            <td style="color:${statusColor}">${job.status.toUpperCase()}</td>
+            <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
+            <td>${(job.activity_ratio||1).toFixed(2)}x</td>
+            <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
+            <td class="timestamp">${job.started_at ? new Date(job.started_at).toLocaleString() : '--'}</td>
+          `;
+        });
 
-  const { data: existing } = await supabase
-    .from("jobs")
-    .select("job_hash, status")
-    .eq("job_hash", job_hash)
-    .single()
-    .catch(() => ({ data: null }));
+        // Minting events table
+        const mintTbody = document.querySelector('#mintingTable tbody');
+        mintTbody.innerHTML='';
+        (mintingEvents||[]).slice(0,10).forEach(evt=>{
+          const row=mintTbody.insertRow();
+          row.innerHTML=`
+            <td>${(evt.amount||0).toFixed(2)} MINT</td>
+            <td>${evt.reason||'--'}</td>
+            <td>${(evt.activity_ratio||1).toFixed(2)}x</td>
+            <td class="timestamp">${evt.timestamp ? new Date(evt.timestamp).toLocaleString() : '--'}</td>
+          `;
+        });
 
-  if (existing) {
-    return jsonResponse(
-      {
-        success: false,
-        error: "job_hash already exists",
-        status: existing.status,
-      },
-      409
-    );
-  }
+        // Alerts
+        const alertsDiv=document.getElementById('alerts');
+        alertsDiv.innerHTML='';
+        if(balances.mint!==null && balances.mint<MIN_BALANCE) alertsDiv.innerHTML+='<div class="alert-critical">⚠️ Treasury below minimum!</div>';
+        else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ Treasury low</div>';
+        if(todayJobs.length===0) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ No jobs processed today</div>';
+        if(avgActivityRatio > 1.5) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ High activity - rewards cooling</div>';
+        if(avgActivityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
 
-  const { error } = await supabase.from("jobs").insert({
-    job_hash,
-    machine_uuid,
-    complexity_claimed: complexity,
-    job_payload: payload ?? null,
-    status: "started",
-    started_at: new Date().toISOString(),
-  });
-
-  if (error) {
-    return jsonResponse({ error: error.message }, 500);
-  }
-
-  return jsonResponse({ success: true, job_hash }, 200);
-}
-
-async function handleCompleteJob(req: Request): Promise<Response> {
-  const supabase = getSupabaseClient();
-  const body = await parseJsonBody(req);
-  const { machine_uuid, job_hash, recipient_wallet, completion_proof } = body;
-
-  if (!machine_uuid || !job_hash || !recipient_wallet || !completion_proof) {
-    return jsonResponse(
-      { error: "machine_uuid, job_hash, recipient_wallet, completion_proof required" },
-      400
-    );
-  }
-
-  const { data: jobRow } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("job_hash", job_hash)
-    .single()
-    .catch(() => ({ data: null }));
-
-  if (!jobRow) {
-    return jsonResponse({ error: "job not found; submit first" }, 404);
-  }
-
-  if (jobRow.status === "completed") {
-    return jsonResponse({ success: true, tx_signature: jobRow.tx_signature }, 200);
-  }
-
-  const { data: machine } = await supabase
-    .from("machines")
-    .select("*")
-    .eq("machine_uuid", machine_uuid)
-    .single()
-    .catch(() => ({ data: null }));
-
-  if (!machine) {
-    return jsonResponse({ error: "machine not registered" }, 404);
-  }
-
-  // Verify signature
-  const { timestamp, signature_base58 } = completion_proof;
-  if (!timestamp || !signature_base58) {
-    return jsonResponse({ error: "completion_proof missing fields" }, 400);
-  }
-
-  const message = `${job_hash}|${recipient_wallet}|${timestamp}`;
-  const messageBytes = new TextEncoder().encode(message);
-
-  try {
-    const signatureBytes = bs58.decode(signature_base58);
-    const pubkeyBytes = bs58.decode(machine.machine_pubkey);
-    const ok = nacl.sign.detached.verify(messageBytes, signatureBytes, pubkeyBytes);
-
-    if (!ok) {
-      await sendCriticalAlert(`Signature verification failed for machine ${machine_uuid}`, {
-        machine_uuid,
-        job_hash,
-      });
-      await supabase
-        .from("jobs")
-        .update({
-          status: "failed",
-          error_message: "signature verification failed",
-        })
-        .eq("job_hash", job_hash);
-      return jsonResponse({ error: "signature verification failed" }, 401);
-    }
-  } catch (e) {
-    await sendCriticalAlert(`Base58 decode failed for job ${job_hash}`, {
-      machine_uuid,
-      job_hash,
-    });
-    return jsonResponse({ error: "Invalid base58 in signature or pubkey" }, 400);
-  }
-
-  // Duration checks
-  const startedAt = new Date(jobRow.started_at).getTime();
-  const completedAt = new Date(timestamp).getTime();
-  const durationSeconds = Math.floor((completedAt - startedAt) / 1000);
-
-  if (durationSeconds < CONFIG.MIN_SECONDS_FOR_REWARD) {
-    await supabase
-      .from("jobs")
-      .update({
-        status: "failed",
-        error_message: "job duration too short",
-      })
-      .eq("job_hash", job_hash);
-    await sendCriticalAlert(`Suspicious job: ${durationSeconds}s for machine ${machine_uuid}`, {
-      machine_uuid,
-      job_hash,
-    });
-    return jsonResponse({ error: "Job duration too short for valid work" }, 400);
-  }
-
-  if (durationSeconds > 7 * 24 * 3600) {
-    return jsonResponse({ error: "Job duration exceeds maximum (7 days)" }, 400);
-  }
-
-  await supabase
-    .from("jobs")
-    .update({ duration_seconds: durationSeconds })
-    .eq("job_hash", job_hash);
-
-  // Calculate dynamic reward with activity ratio
-  const snapshot = await getNetworkSnapshot(supabase);
-  const machineMeta = machine.metadata ?? {};
-  const { reward: rewardMint, dynamicFactor, activityRatio } = calculateDynamicReward(
-    durationSeconds,
-    machineMeta,
-    snapshot
-  );
-
-  const decimals = mintDecimals();
-  const rewardBaseUnits = BigInt(Math.floor(rewardMint * Math.pow(10, decimals)));
-
-  // Daily limit check
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const { data: recentPayouts } = await supabase
-    .from("payouts")
-    .select("amount")
-    .eq("machine_uuid", machine_uuid)
-    .gte("created_at", since);
-
-  const totalLast24 = (recentPayouts ?? []).reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
-  if (totalLast24 + rewardMint > dailyLimitPerMachine()) {
-    return jsonResponse({ error: "daily limit exceeded" }, 429);
-  }
-
-  // Lock job
-  await supabase
-    .from("jobs")
-    .update({
-      status: "processing",
-      processing_at: new Date().toISOString(),
-    })
-    .eq("job_hash", job_hash)
-    .eq("status", "started");
-
-  try {
-    const connection = makeConnection();
-    const treasury = loadTreasuryKeypair();
-    const mintAddress = Deno.env.get("MINT_ADDRESS");
-    if (!mintAddress) throw new Error("MINT_ADDRESS not set");
-
-    const mintPub = new PublicKey(mintAddress);
-    const senderAta = await getOrCreateAssociatedTokenAccount(
-      connection,
-      treasury,
-      mintPub,
-      treasury.publicKey
-    );
-
-    const balance = await connection.getTokenAccountBalance(senderAta.address);
-    const currentBalance = balance.value.uiAmount ?? 0;
-
-    if (currentBalance < rewardMint) {
-      await sendCriticalAlert(`Treasury depleted: ${currentBalance} MINT`, {
-        required: rewardMint,
-      });
-      await supabase
-        .from("jobs")
-        .update({
-          status: "failed",
-          error_message: "Treasury depleted",
-        })
-        .eq("job_hash", job_hash);
-      return jsonResponse({ error: "Treasury depleted" }, 503);
+        document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+      } catch(err){ console.error('Dashboard error:', err); }
+      finally{ document.getElementById('refresh').classList.remove('loading'); }
     }
 
-    const solBalance = await connection.getBalance(treasury.publicKey);
-    if (solBalance / 1e9 < 0.01) {
-      await sendCriticalAlert(`SOL balance critically low: ${solBalance / 1e9} SOL`);
-      await supabase
-        .from("jobs")
-        .update({
-          status: "failed",
-          error_message: "Insufficient SOL",
-        })
-        .eq("job_hash", job_hash);
-      return jsonResponse({ error: "Insufficient SOL for fees" }, 503);
-    }
-
-    const recipientPubKey = new PublicKey(recipient_wallet);
-    const recipientAta = await getOrCreateAssociatedTokenAccount(
-      connection,
-      treasury,
-      mintPub,
-      recipientPubKey
-    );
-
-    const transferIx = createTransferCheckedInstruction(
-      senderAta.address,
-      mintPub,
-      recipientAta.address,
-      treasury.publicKey,
-      rewardBaseUnits,
-      decimals
-    );
-
-    const tx = new Transaction().add(transferIx);
-    const txSig = await sendAndConfirmTransaction(connection, tx, [treasury], {
-      skipPreflight: false,
-      commitment: "confirmed",
-    });
-
-    await supabase.from("payouts").insert({
-      job_hash,
-      machine_uuid,
-      recipient: recipient_wallet,
-      amount: rewardMint,
-      amount_base_units: rewardBaseUnits.toString(),
-      mint_address: mintAddress,
-      tx_signature: txSig,
-      activity_ratio: activityRatio,
-      created_at: new Date().toISOString(),
-    });
-
-    await supabase
-      .from("jobs")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        completion_proof,
-        reward_amount_numeric: rewardMint,
-        tx_signature: txSig,
-        recipient_wallet,
-        dynamic_factor: dynamicFactor,
-        activity_ratio: activityRatio,
-      })
-      .eq("job_hash", job_hash);
-
-    const solscan = `https://solscan.io/tx/${txSig}?cluster=mainnet`;
-    return jsonResponse(
-      {
-        success: true,
-        tx_signature: txSig,
-        reward: rewardMint,
-        activity_ratio: activityRatio,
-        dynamic_factor: dynamicFactor,
-        solscan,
-      },
-      200
-    );
-  } catch (err: any) {
-    console.error("Transaction failed:", err);
-    await sendCriticalAlert(`Transaction failed: ${err.message}`, {
-      machine_uuid,
-      job_hash,
-      error: err.message,
-    });
-    await supabase
-      .from("jobs")
-      .update({
-        status: "failed",
-        error_message: `Transaction failed: ${err.message}`,
-      })
-      .eq("job_hash", job_hash);
-    return jsonResponse({ error: `Transaction failed: ${err.message}` }, 500);
-  }
-}
-
-async function handleGetMetrics(req: Request): Promise<Response> {
-  const supabase = getSupabaseClient();
-  try {
-    const snapshot = await getNetworkSnapshot(supabase);
-    const activityRatio = calculateActivityRatio(snapshot);
-    const activityMultiplier = calculateActivityMultiplier(activityRatio);
-    const burnRate = await calculate24hBurnRate(supabase);
-
-    const connection = makeConnection();
-    const treasury = loadTreasuryKeypair();
-    const mintAddress = Deno.env.get("MINT_ADDRESS") ?? "";
-    const currentBalance = mintAddress ? await getTreasuryBalance(connection, treasury, mintAddress) : 0;
-
-    const { data: recentJobs } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("status", "completed")
-      .order("completed_at", { ascending: false })
-      .limit(10);
-
-    const { data: mintingEvents } = await supabase
-      .from("minting_events")
-      .select("*")
-      .order("timestamp", { ascending: false })
-      .limit(5);
-
-    return jsonResponse(
-      {
-        network: {
-          active_nodes: snapshot.activeNodes,
-          total_runtime_seconds: snapshot.totalRuntime,
-          total_jobs_completed: snapshot.jobsCompleted,
-        },
-        activity: {
-          activity_ratio: activityRatio,
-          activity_multiplier: activityMultiplier,
-          burn_rate_per_hour: burnRate,
-        },
-        treasury: {
-          balance_mint: currentBalance,
-          runway_days: burnRate > 0 ? currentBalance / (burnRate * 24) : 9999,
-        },
-        recent_jobs: recentJobs ?? [],
-        recent_minting_events: mintingEvents ?? [],
-      },
-      200
-    );
-  } catch (err: any) {
-    console.error("getMetrics failed:", err);
-    return jsonResponse({ error: err.message }, 500);
-  }
-}
-
-/* ---------- Utility ---------- */
-function jsonResponse(obj: any, status: number = 200): Response {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+    loadData();
+    setInterval(loadData, 30000); // Update every 30 seconds
+  </script>
+</body>
+</html>
