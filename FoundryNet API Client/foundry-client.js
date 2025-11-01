@@ -1,34 +1,73 @@
-// foundry-client.js - Production client
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
-class FoundryClient {
-  constructor(config = {}) {
+export interface FoundryConfig {
+  apiUrl?: string;
+  retryAttempts?: number;
+  retryDelay?: number;
+  debug?: boolean;
+}
+
+export interface MachineIdentity {
+  machineUuid: string;
+  publicKey: string;
+  secretKey: string;
+}
+
+export interface JobResult {
+  success: boolean;
+  tx_signature?: string;
+  reward?: number;
+  activity_ratio?: number;
+  dynamic_factor?: number;
+  solscan?: string;
+  error?: string;
+  duplicate?: boolean;
+  job_hash?: string;
+}
+
+export interface MachineMetadata {
+  type?: string;
+  class?: string;
+  model?: string;
+  [key: string]: any;
+}
+
+export class FoundryClient {
+  private apiUrl: string;
+  private machineUuid: string | null = null;
+  private keyPair: nacl.SignKeyPair | null = null;
+  private retryAttempts: number;
+  private retryDelay: number;
+  private debug: boolean;
+
+  constructor(config: FoundryConfig = {}) {
     this.apiUrl = config.apiUrl || 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts';
-    this.machineUuid = null;
-    this.keyPair = null;
     this.retryAttempts = config.retryAttempts || 3;
     this.retryDelay = config.retryDelay || 2000;
     this.debug = config.debug || false;
   }
 
-  log(level, message, data = {}) {
+  private log(level: string, message: string, data: any = {}): void {
     if (!this.debug && level === 'debug') return;
     const timestamp = new Date().toISOString();
-    console[level](`[FoundryNet ${timestamp}] ${message}`, data);
+    console[level as any](`[FoundryNet ${timestamp}] ${message}`, data);
   }
 
-  async withRetry(fn, context = '') {
-    let lastError;
+  private async withRetry<T>(fn: () => Promise<T>, context: string = ''): Promise<T> {
+    let lastError: any;
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
       try {
         return await fn();
-      } catch (error) {
+      } catch (error: any) {
         lastError = error;
-        this.log('warn', `${context} failed (attempt ${attempt}/${this.retryAttempts})`, { error: error.message });
+        this.log('warn', `${context} failed (attempt ${attempt}/${this.retryAttempts})`, { 
+          error: error.message 
+        });
         if (attempt < this.retryAttempts) {
           const delay = this.retryDelay * attempt;
           this.log('debug', `Retrying in ${delay}ms...`);
@@ -36,52 +75,53 @@ class FoundryClient {
         }
       }
     }
-    this.log('error', `${context} failed after ${this.retryAttempts} attempts`, { error: lastError.message });
+    this.log('error', `${context} failed after ${this.retryAttempts} attempts`, { 
+      error: lastError?.message 
+    });
     throw lastError;
   }
 
-  generateMachineId() {
+  generateMachineId(): MachineIdentity {
     this.machineUuid = uuidv4();
     this.keyPair = nacl.sign.keyPair();
-    const identity = {
+    const identity: MachineIdentity = {
       machineUuid: this.machineUuid,
       publicKey: bs58.encode(this.keyPair.publicKey),
-      secretKey: bs58.encode(this.keyPair.secretKey)
+      secretKey: bs58.encode(this.keyPair.secretKey),
     };
-    this.log('info', 'Generated new machine identity', { 
+    this.log('info', 'Generated new machine identity', {
       machineUuid: identity.machineUuid,
-      publicKey: identity.publicKey 
+      publicKey: identity.publicKey,
     });
     return identity;
   }
 
-  loadMachineId(machineUuid, secretKeyBase58) {
+  loadMachineId(machineUuid: string, secretKeyBase58: string): void {
     try {
       this.machineUuid = machineUuid;
       const secretKeyBytes = bs58.decode(secretKeyBase58);
       const fullKeyPair = nacl.sign.keyPair.fromSecretKey(secretKeyBytes);
       this.keyPair = {
         publicKey: fullKeyPair.publicKey,
-        secretKey: fullKeyPair.secretKey
+        secretKey: fullKeyPair.secretKey,
       };
       this.log('info', 'Loaded machine identity', { machineUuid });
-      return true;
-    } catch (error) {
+    } catch (error: any) {
       this.log('error', 'Failed to load machine identity', { error: error.message });
       throw new Error(`Invalid machine credentials: ${error.message}`);
     }
   }
 
-  saveCredentials(identity) {
+  saveCredentials(identity: MachineIdentity): void {
     const credPath = path.join(process.cwd(), '.foundry_credentials.json');
     fs.writeFileSync(credPath, JSON.stringify({
       machineUuid: identity.machineUuid,
-      secretKey: identity.secretKey
+      secretKey: identity.secretKey,
     }, null, 2));
-    this.log('debug', 'Credentials saved');
+    this.log('debug', 'Credentials saved to .foundry_credentials.json');
   }
 
-  loadCredentials() {
+  loadCredentials(): boolean {
     try {
       const credPath = path.join(process.cwd(), '.foundry_credentials.json');
       if (fs.existsSync(credPath)) {
@@ -89,47 +129,64 @@ class FoundryClient {
         this.loadMachineId(creds.machineUuid, creds.secretKey);
         return true;
       }
-    } catch {}
+    } catch (e) {
+      this.log('debug', 'No existing credentials found');
+    }
     return false;
   }
 
-  async init(metadata = {}) {
+  async init(metadata: MachineMetadata = {}): Promise<{ existing: boolean; identity?: MachineIdentity; machineUuid?: string }> {
     if (this.loadCredentials()) {
-      this.log('info', 'Using existing machine credentials');
-      return { existing: true, machineUuid: this.machineUuid };
+      this.log('info', 'Using existing machine credentials', { machineUuid: this.machineUuid });
+      return { existing: true, machineUuid: this.machineUuid || '' };
     }
+
     const identity = this.generateMachineId();
     this.saveCredentials(identity);
     await this.registerMachine(metadata);
     return { existing: false, identity };
   }
 
-  async registerMachine(metadata = {}) {
+  async registerMachine(metadata: MachineMetadata = {}): Promise<{ success: boolean; machine_uuid?: string; error?: string }> {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Generate or load machine ID first');
     }
+
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/register-machine`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
-          machine_pubkey_base58: bs58.encode(this.keyPair.publicKey),
-          metadata
-        })
+          machine_pubkey_base58: bs58.encode(this.keyPair!.publicKey),
+          metadata,
+        }),
       });
+
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Registration failed: ${error}`);
       }
+
       const result = await response.json();
-      this.log('info', 'Machine registered successfully');
+      this.log('info', 'Machine registered successfully', { machineUuid: this.machineUuid });
       return result;
     }, 'Machine registration');
   }
 
-  async submitJob(jobHash, payload = {}) {
-    if (!this.machineUuid) throw new Error('Machine not initialized');
+  async submitJob(
+    jobHash: string,
+    complexity: number = 1.0,
+    payload: any = {}
+  ): Promise<{ success: boolean; job_hash?: string; error?: string }> {
+    if (!this.machineUuid) {
+      throw new Error('Machine not initialized');
+    }
+
+    if (complexity < 0.5 || complexity > 2.0) {
+      throw new Error('Complexity must be 0.5-2.0');
+    }
+
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/submit-job`, {
         method: 'POST',
@@ -137,29 +194,40 @@ class FoundryClient {
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
-          payload
-        })
+          complexity,
+          payload,
+        }),
       });
+
       if (response.status === 409) {
         this.log('warn', 'Job already exists', { jobHash });
         return { success: true, duplicate: true, job_hash: jobHash };
       }
+
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job submission failed: ${error}`);
       }
+
       const result = await response.json();
-      this.log('debug', 'Job submitted', { jobHash });
+      this.log('debug', 'Job submitted', { jobHash, complexity });
       return result;
     }, 'Job submission');
   }
 
-  async completeJob(jobHash, recipientWallet) {
-    if (!this.machineUuid || !this.keyPair) throw new Error('Machine not initialized');
+  async completeJob(
+    jobHash: string,
+    recipientWallet: string
+  ): Promise<JobResult> {
+    if (!this.machineUuid || !this.keyPair) {
+      throw new Error('Machine not initialized');
+    }
+
     const timestamp = new Date().toISOString();
     const message = `${jobHash}|${recipientWallet}|${timestamp}`;
     const messageBytes = new TextEncoder().encode(message);
     const signature = nacl.sign.detached(messageBytes, this.keyPair.secretKey);
+
     return await this.withRetry(async () => {
       const response = await fetch(`${this.apiUrl}/complete-job`, {
         method: 'POST',
@@ -170,336 +238,214 @@ class FoundryClient {
           recipient_wallet: recipientWallet,
           completion_proof: {
             timestamp,
-            signature_base58: bs58.encode(signature)
-          }
-        })
+            signature_base58: bs58.encode(signature),
+          },
+        }),
       });
+
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Job completion failed: ${error}`);
       }
+
       const result = await response.json();
-      this.log('info', 'Job completed - MINT earned!', { 
-        jobHash, 
+      this.log('info', 'Job completed - MINT earned!', {
+        jobHash,
         reward: result.reward,
-        txSignature: result.tx_signature 
+        txSignature: result.tx_signature,
+        activityRatio: result.activity_ratio,
       });
       return result;
     }, 'Job completion');
   }
 
-  generateJobHash(filename, additionalData = '') {
+  generateJobHash(filename: string, additionalData: string = ''): string {
     const data = `${this.machineUuid}|${filename}|${Date.now()}|${additionalData}`;
-    let hash = 0;
-    for (let i = 0; i < data.length; i++) {
-      const char = data.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return `job_${Math.abs(hash).toString(36)}_${Date.now()}`;
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
+    return `job_${hash.slice(0, 16)}_${Date.now()}`;
+  }
+
+  async getMetrics(): Promise<any> {
+    return await this.withRetry(async () => {
+      const response = await fetch(`${this.apiUrl.replace('/main-ts', '')}/metrics`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch metrics`);
+      }
+
+      return await response.json();
+    }, 'Fetch metrics');
   }
 }
 
-export { FoundryClient };
-
 // ============================================================================
-// INTEGRATION EXAMPLES FOR DIFFERENT AGENTS, SOFTWARE, AND MACHINES
+// INTEGRATION EXAMPLES
 // ============================================================================
-//
-// These examples demonstrate how to connect various types of agents,
-// workflows, and physical devices to the FoundryClient for automatic,
-// on-chain MINT rewards. The patterns are consistent:
-//   1. Initialize FoundryClient
-//   2. Submit a job hash when work starts
-//   3. Complete the job when verified finished
-//
-// ============================================================================
-// PART 1 — SOFTWARE & AGENT INTEGRATIONS
-// ============================================================================
-
 
 /**
- * 1️⃣ LangChain Agent (Autonomous Task Execution)
- * Integrates Foundry rewards into a LangChain pipeline.
- * Each run of the agent earns MINT based on completion complexity.
+ * LangChain Agent Example
+ * Integrates FoundryClient with LangChain agent execution
  */
-async function exampleLangChainAgent(query) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io', debug: true });
-  await client.init({ type: 'agent', model: 'gpt-4-langchain' });
+export async function exampleLangChainAgent(client: FoundryClient, query: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('langchain_agent', query);
+  await client.submitJob(jobHash, 1.0, { job_type: 'langchain_agent', query });
 
-  const jobHash = client.generateJobHash('langchain_query', query);
-  await client.submitJob(jobHash, { job_type: 'langchain_agent_query', query });
+  // Simulate agent execution (in production, call your LangChain pipeline)
+  console.log(`[LangChain Agent] Processing: ${query}`);
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Perform the AI reasoning task
-  const response = await runLangChainAgent(query);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: response });
-  return response;
-}
-
-
-/**
- * 2️⃣ LangGraph Workflow (Composable AI Chain)
- * Tracks complex AI graph flows; each node triggers a separate job if needed.
- */
-async function exampleLangGraphWorkflow(workflowInput) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io', debug: false });
-  await client.init({ type: 'workflow', model: 'langgraph' });
-
-  const jobHash = client.generateJobHash('langgraph_workflow', workflowInput);
-  await client.submitJob(jobHash, { job_type: 'langgraph', input: workflowInput });
-
-  const output = await runLangGraph(workflowInput);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: output });
-  return output;
-}
-
-
-/**
- * 3️⃣ N8N Automation Flow
- * Wraps any node in N8N to automatically record job starts/completions.
- */
-async function exampleN8NAutomation(taskData) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'automation', model: 'n8n_flow' });
-
-  const jobHash = client.generateJobHash('n8n_task', taskData);
-  await client.submitJob(jobHash, { job_type: 'automation', metadata: taskData });
-
-  // Execute N8N task
-  const result = await executeN8NWorkflow(taskData);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { proof: result });
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
   return result;
 }
 
-
 /**
- * 4️⃣ On-Chain Payment Verification Bot
- * Runs continuously, verifying on-chain payments or wallet activity.
+ * LangGraph Workflow Example
+ * Tracks complex AI graph flows
  */
-async function exampleOnchainVerification(txId) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'verifier', model: 'solana-scanner' });
+export async function exampleLangGraphWorkflow(client: FoundryClient, workflowInput: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('langgraph_workflow', JSON.stringify(workflowInput));
+  await client.submitJob(jobHash, 1.2, { job_type: 'langgraph', input: workflowInput });
 
-  const jobHash = client.generateJobHash('onchain_verification', txId);
-  await client.submitJob(jobHash, { job_type: 'onchain_verification', txId });
+  console.log(`[LangGraph] Executing workflow`);
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
-  const verified = await checkTransactionOnChain(txId);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { verified });
-  return verified;
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 5️⃣ GPU Training Job Tracker
- * Rewards model training runs or compute-intensive ML jobs.
+ * N8N Automation Example
+ * Wraps N8N workflow execution
  */
-async function exampleGpuTrainingJob(config) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'training', model: config.model });
+export async function exampleN8NAutomation(client: FoundryClient, taskData: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('n8n_task', JSON.stringify(taskData));
+  await client.submitJob(jobHash, 1.0, { job_type: 'automation', task: taskData });
 
-  const jobHash = client.generateJobHash('gpu_training', config);
-  await client.submitJob(jobHash, { job_type: 'gpu_training', params: config });
+  console.log(`[N8N] Running automation`);
+  await new Promise(resolve => setTimeout(resolve, 800));
 
-  const metrics = await runModelTraining(config);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { metrics });
-  return metrics;
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 6️⃣ Batch Data Processor
- * Ideal for indexing, ETL pipelines, and large async job batches.
+ * GPU Training Job Example
+ * Rewards ML training runs
  */
-async function exampleBatchProcessor(batchData) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'batch_processor', model: 'data-indexer' });
+export async function exampleGpuTrainingJob(client: FoundryClient, config: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('gpu_training', JSON.stringify(config));
+  await client.submitJob(jobHash, 1.8, { job_type: 'gpu_training', model: config.model });
 
-  const jobHash = client.generateJobHash('batch_process', batchData);
-  await client.submitJob(jobHash, { job_type: 'data_batch', size: batchData.length });
+  console.log(`[GPU Training] Training model: ${config.model}`);
+  await new Promise(resolve => setTimeout(resolve, 2000));
 
-  const processed = await runDataPipeline(batchData);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { processed });
-  return processed;
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
-
-// ============================================================================
-// PART 2 — FIRMWARE & MACHINE INTEGRATIONS
-// ============================================================================
-
-
 /**
- * 7️⃣ OctoPrint 3D Printer Integration
- * Hooks into print events (start/done) to reward machine work.
+ * 3D Printer Integration Example
+ * Hooks into print completion
  */
-async function exampleOctoPrintIntegration(printJob) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'machine', model: 'octoprint' });
-
+export async function example3DPrinterJob(client: FoundryClient, printJob: any): Promise<JobResult> {
   const jobHash = client.generateJobHash('3d_print', printJob.file);
-  await client.submitJob(jobHash, { job_type: '3d_print', details: printJob });
+  await client.submitJob(jobHash, 1.2, { job_type: '3d_print', file: printJob.file });
 
-  // Simulate or hook into OctoPrint’s event loop
-  await waitForPrintCompletion(printJob);
+  console.log(`[3D Printer] Printing: ${printJob.file}`);
+  await new Promise(resolve => setTimeout(resolve, 2500));
 
-  await client.completeJob(jobHash, printJob.wallet, { status: 'success' });
+  const result = await client.completeJob(jobHash, printJob.wallet || 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 8️⃣ Klipper + Moonraker Integration
- * Integrates directly with Moonraker WebSocket to trigger jobs on print completion.
+ * CNC Machine Example
+ * Rewards toolpath execution
  */
-async function exampleKlipperIntegration(event) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'machine', model: 'klipper' });
+export async function exampleCNCJob(client: FoundryClient, toolpath: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('cnc_job', toolpath.id);
+  await client.submitJob(jobHash, 1.8, { job_type: 'cnc', steps: toolpath.steps });
 
-  const jobHash = client.generateJobHash('klipper_job', event.file);
-  await client.submitJob(jobHash, { job_type: 'klipper_print', event });
+  console.log(`[CNC] Executing toolpath: ${toolpath.id}`);
+  await new Promise(resolve => setTimeout(resolve, 1800));
 
-  await waitForKlipperDone(event);
-
-  await client.completeJob(jobHash, event.wallet, { confirmed: true });
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 9️⃣ GRBL / CNC Controller
- * Rewards each toolpath completion or machine cycle.
+ * Robot Task Example
+ * Tracks autonomous robot work
  */
-async function exampleGrblIntegration(toolpath) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'machine', model: 'grbl' });
+export async function exampleRobotTask(client: FoundryClient, robotId: string, task: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('robot_task', robotId);
+  await client.submitJob(jobHash, 1.5, { job_type: 'robot', id: robotId, task });
 
-  const jobHash = client.generateJobHash('cnc_toolpath', toolpath.id);
-  await client.submitJob(jobHash, { job_type: 'cnc', steps: toolpath.steps });
+  console.log(`[Robot] Executing task: ${task}`);
+  await new Promise(resolve => setTimeout(resolve, 1200));
 
-  await executeCncJob(toolpath);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { done: true });
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 🔟 Custom DIY Machine
- * For any Arduino, ESP32, or embedded system that can send HTTP.
+ * Simple On-Chain Verification Example
+ * Rewards verification work
  */
-async function exampleCustomMachine(task) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'machine', model: 'custom-diy' });
+export async function exampleOnChainVerification(client: FoundryClient, txId: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('onchain_verify', txId);
+  await client.submitJob(jobHash, 1.0, { job_type: 'verification', tx: txId });
 
-  const jobHash = client.generateJobHash('custom_task', task.id);
-  await client.submitJob(jobHash, { job_type: 'custom', task });
+  console.log(`[Verification] Verifying transaction: ${txId}`);
+  await new Promise(resolve => setTimeout(resolve, 500));
 
-  await runPhysicalAction(task);
-
-  await client.completeJob(jobHash, task.wallet, { verified: true });
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 11️⃣ Simple Hardware Script
- * Minimal template for Raspberry Pi, IoT, or PLC device.
+ * Batch Data Processing Example
+ * Rewards batch processing jobs
  */
-async function exampleSimpleHardwareScript(signal) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'machine', model: 'simple' });
+export async function exampleBatchProcessor(client: FoundryClient, batchSize: number): Promise<JobResult> {
+  const jobHash = client.generateJobHash('batch_process', `batch_${batchSize}`);
+  const complexity = Math.min(2.0, 0.5 + (batchSize / 1000));
+  await client.submitJob(jobHash, complexity, { job_type: 'batch', size: batchSize });
 
-  const jobHash = client.generateJobHash('signal_job', signal.id);
-  await client.submitJob(jobHash, { job_type: 'signal', data: signal });
+  console.log(`[Batch] Processing ${batchSize} items`);
+  const processingTime = Math.min(5000, 100 + batchSize * 2);
+  await new Promise(resolve => setTimeout(resolve, processingTime));
 
-  await waitForSensorConfirmation(signal);
-
-  await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS', { confirmed: true });
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
 }
 
-
 /**
- * 12️⃣ AI Manufacturing Agent
- * Coordinates multiple machines; submits and finalizes jobs for each.
+ * Multi-Agent Coordination Example
+ * Tracks coordinated work across multiple agents
  */
-async function exampleManufacturingAgent(batch) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'agent', model: 'factory-orchestrator' });
+export async function exampleMultiAgentCoordination(
+  clients: FoundryClient[],
+  taskName: string
+): Promise<JobResult[]> {
+  const results: JobResult[] = [];
 
-  const jobHash = client.generateJobHash('factory_batch', batch.id);
-  await client.submitJob(jobHash, { job_type: 'factory_batch', machines: batch.machines });
+  for (let i = 0; i < clients.length; i++) {
+    const client = clients[i];
+    const jobHash = client.generateJobHash('multi_agent', `${taskName}_agent_${i}`);
+    await client.submitJob(jobHash, 1.0, { job_type: 'coordination', task: taskName, agent: i });
 
-  for (const machine of batch.machines) {
-    await signalMachineStart(machine);
-    await signalMachineComplete(machine);
+    console.log(`[Agent ${i}] Executing coordinated task`);
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+    results.push(result);
   }
 
-  await client.completeJob(jobHash, batch.wallet, { machines: batch.machines.length });
+  return results;
 }
 
-
-/**
- * 13️⃣ Fleet Robotics Network
- * Tracks distributed machine fleets via shared FoundryClient identity.
- */
-async function exampleFleetRoboticsNetwork(fleet) {
-  const client = new FoundryClient({ apiUrl: 'https://api.foundrynet.io' });
-  await client.init({ type: 'fleet', model: 'robotics-network' });
-
-  for (const bot of fleet) {
-    const jobHash = client.generateJobHash('robot_task', bot.id);
-    await client.submitJob(jobHash, { job_type: 'robot', id: bot.id });
-
-    await runRobotTask(bot);
-
-    await client.completeJob(jobHash, bot.wallet, { task: 'done' });
-  }
-}
-
-
-
-// ============================================================================
-// HELPER STUBS (mock implementations for illustration)
-// ============================================================================
-
-async function runLangChainAgent(q) { return `response for ${q}`; }
-async function runLangGraph(i) { return `output for ${i}`; }
-async function executeN8NWorkflow(d) { return { success: true, ...d }; }
-async function checkTransactionOnChain(tx) { return { tx, verified: true }; }
-async function runModelTraining(c) { return { epochs: 3, accuracy: 0.92 }; }
-async function runDataPipeline(d) { return d.map(x => ({ processed: x })); }
-async function waitForPrintCompletion(p) { return new Promise(r => setTimeout(r, 1000)); }
-async function waitForKlipperDone(e) { return new Promise(r => setTimeout(r, 1000)); }
-async function executeCncJob(t) { return new Promise(r => setTimeout(r, 500)); }
-async function runPhysicalAction(t) { return new Promise(r => setTimeout(r, 500)); }
-async function waitForSensorConfirmation(s) { return new Promise(r => setTimeout(r, 500)); }
-async function signalMachineStart(m) { return new Promise(r => setTimeout(r, 300)); }
-async function signalMachineComplete(m) { return new Promise(r => setTimeout(r, 300)); }
-async function runRobotTask(b) { return new Promise(r => setTimeout(r, 400)); }
-
-
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-module.exports = {
-  // Software & Agents
-  exampleLangChainAgent,
-  exampleLangGraphWorkflow,
-  exampleN8NAutomation,
-  exampleOnchainVerification,
-  exampleGpuTrainingJob,
-  exampleBatchProcessor,
-
-  // Firmware & Machines
-  exampleOctoPrintIntegration,
-  exampleKlipperIntegration,
-  exampleGrblIntegration,
-  exampleCustomMachine,
-  exampleSimpleHardwareScript,
-  exampleManufacturingAgent,
-  exampleFleetRoboticsNetwork,
-};
+export default FoundryClient;
