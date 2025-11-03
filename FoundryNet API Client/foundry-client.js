@@ -5,65 +5,30 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-export interface FoundryConfig {
-  apiUrl?: string;
-  retryAttempts?: number;
-  retryDelay?: number;
-  debug?: boolean;
-}
-
-export interface MachineIdentity {
-  machineUuid: string;
-  publicKey: string;
-  secretKey: string;
-}
-
-export interface JobResult {
-  success: boolean;
-  tx_signature?: string;
-  reward?: number;
-  activity_ratio?: number;
-  dynamic_factor?: number;
-  solscan?: string;
-  error?: string;
-  duplicate?: boolean;
-  job_hash?: string;
-}
-
-export interface MachineMetadata {
-  type?: string;
-  class?: string;
-  model?: string;
-  [key: string]: any;
-}
-
 export class FoundryClient {
-  private apiUrl: string;
-  private machineUuid: string | null = null;
-  private keyPair: nacl.SignKeyPair | null = null;
-  private retryAttempts: number;
-  private retryDelay: number;
-  private debug: boolean;
-
-  constructor(config: FoundryConfig = {}) {
+  constructor(config = {}) {
     this.apiUrl = config.apiUrl || 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts';
     this.retryAttempts = config.retryAttempts || 3;
     this.retryDelay = config.retryDelay || 2000;
     this.debug = config.debug || false;
+    this.credentialsFile = config.credentialsFile || '.foundry_credentials.json';
+    
+    this.machineUuid = null;
+    this.keyPair = null;
   }
 
-  private log(level: string, message: string, data: any = {}): void {
+  log(level, message, data = {}) {
     if (!this.debug && level === 'debug') return;
     const timestamp = new Date().toISOString();
-    console[level as any](`[FoundryNet ${timestamp}] ${message}`, data);
+    console[level](`[FoundryNet ${timestamp}] ${message}`, data);
   }
 
-  private async withRetry<T>(fn: () => Promise<T>, context: string = ''): Promise<T> {
-    let lastError: any;
+  async withRetry(fn, context = '') {
+    let lastError;
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
       try {
         return await fn();
-      } catch (error: any) {
+      } catch (error) {
         lastError = error;
         this.log('warn', `${context} failed (attempt ${attempt}/${this.retryAttempts})`, { 
           error: error.message 
@@ -81,10 +46,10 @@ export class FoundryClient {
     throw lastError;
   }
 
-  generateMachineId(): MachineIdentity {
+  generateMachineId() {
     this.machineUuid = uuidv4();
     this.keyPair = nacl.sign.keyPair();
-    const identity: MachineIdentity = {
+    const identity = {
       machineUuid: this.machineUuid,
       publicKey: bs58.encode(this.keyPair.publicKey),
       secretKey: bs58.encode(this.keyPair.secretKey),
@@ -96,7 +61,7 @@ export class FoundryClient {
     return identity;
   }
 
-  loadMachineId(machineUuid: string, secretKeyBase58: string): void {
+  loadMachineId(machineUuid, secretKeyBase58) {
     try {
       this.machineUuid = machineUuid;
       const secretKeyBytes = bs58.decode(secretKeyBase58);
@@ -106,48 +71,60 @@ export class FoundryClient {
         secretKey: fullKeyPair.secretKey,
       };
       this.log('info', 'Loaded machine identity', { machineUuid });
-    } catch (error: any) {
+    } catch (error) {
       this.log('error', 'Failed to load machine identity', { error: error.message });
       throw new Error(`Invalid machine credentials: ${error.message}`);
     }
   }
 
-  saveCredentials(identity: MachineIdentity): void {
-    const credPath = path.join(process.cwd(), '.foundry_credentials.json');
+  saveCredentials(identity) {
+    const credPath = path.join(process.cwd(), this.credentialsFile);
     fs.writeFileSync(credPath, JSON.stringify({
       machineUuid: identity.machineUuid,
       secretKey: identity.secretKey,
+      publicKey: identity.publicKey,
+      createdAt: new Date().toISOString(),
     }, null, 2));
-    this.log('debug', 'Credentials saved to .foundry_credentials.json');
+    this.log('debug', 'Credentials saved', { file: credPath });
   }
 
-  loadCredentials(): boolean {
+  loadCredentials() {
     try {
-      const credPath = path.join(process.cwd(), '.foundry_credentials.json');
+      const credPath = path.join(process.cwd(), this.credentialsFile);
       if (fs.existsSync(credPath)) {
         const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
         this.loadMachineId(creds.machineUuid, creds.secretKey);
+        this.log('info', 'Loaded existing credentials', { machineUuid: this.machineUuid });
         return true;
       }
     } catch (e) {
-      this.log('debug', 'No existing credentials found');
+      this.log('debug', 'No existing credentials found or corrupted');
     }
     return false;
   }
 
-  async init(metadata: MachineMetadata = {}): Promise<{ existing: boolean; identity?: MachineIdentity; machineUuid?: string }> {
+  async init(metadata = {}) {
+    // Try to load existing credentials first
     if (this.loadCredentials()) {
       this.log('info', 'Using existing machine credentials', { machineUuid: this.machineUuid });
       return { existing: true, machineUuid: this.machineUuid || '' };
     }
 
+    // Generate new identity if not found
     const identity = this.generateMachineId();
     this.saveCredentials(identity);
+    
+    // Register with backend
     await this.registerMachine(metadata);
-    return { existing: false, identity };
+    
+    return { 
+      existing: false, 
+      identity,
+      machineUuid: this.machineUuid || ''
+    };
   }
 
-  async registerMachine(metadata: MachineMetadata = {}): Promise<{ success: boolean; machine_uuid?: string; error?: string }> {
+  async registerMachine(metadata = {}) {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Generate or load machine ID first');
     }
@@ -158,7 +135,7 @@ export class FoundryClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
-          machine_pubkey_base58: bs58.encode(this.keyPair!.publicKey),
+          machine_pubkey_base58: bs58.encode(this.keyPair.publicKey),
           metadata,
         }),
       });
@@ -174,17 +151,21 @@ export class FoundryClient {
     }, 'Machine registration');
   }
 
-  async submitJob(
-    jobHash: string,
-    complexity: number = 1.0,
-    payload: any = {}
-  ): Promise<{ success: boolean; job_hash?: string; error?: string }> {
+  async submitJob(jobHash, complexity = 1.0, payload = {}) {
     if (!this.machineUuid) {
       throw new Error('Machine not initialized');
     }
 
-    if (complexity < 0.5 || complexity > 2.0) {
-      throw new Error('Complexity must be 0.5-2.0');
+    // Normalize complexity to 2 decimal places
+    const normalized = Math.round(complexity * 100) / 100;
+    
+    // Validate range with tolerance
+    const MIN_COMPLEXITY = 0.5;
+    const MAX_COMPLEXITY = 2.0;
+    const TOLERANCE = 0.01;
+    
+    if (normalized < MIN_COMPLEXITY - TOLERANCE || normalized > MAX_COMPLEXITY + TOLERANCE) {
+      throw new Error(`Complexity must be ${MIN_COMPLEXITY}-${MAX_COMPLEXITY}, got ${normalized}`);
     }
 
     return await this.withRetry(async () => {
@@ -194,7 +175,7 @@ export class FoundryClient {
         body: JSON.stringify({
           machine_uuid: this.machineUuid,
           job_hash: jobHash,
-          complexity,
+          complexity: normalized,
           payload,
         }),
       });
@@ -205,20 +186,24 @@ export class FoundryClient {
       }
 
       if (!response.ok) {
-        const error = await response.text();
+        const text = await response.text();
+        let error = text;
+        try {
+          const json = JSON.parse(text);
+          error = json.error || text;
+        } catch (e) {
+          // Keep raw text
+        }
         throw new Error(`Job submission failed: ${error}`);
       }
 
       const result = await response.json();
-      this.log('debug', 'Job submitted', { jobHash, complexity });
+      this.log('debug', 'Job submitted', { jobHash, complexity: normalized });
       return result;
     }, 'Job submission');
   }
 
-  async completeJob(
-    jobHash: string,
-    recipientWallet: string
-  ): Promise<JobResult> {
+  async completeJob(jobHash, recipientWallet) {
     if (!this.machineUuid || !this.keyPair) {
       throw new Error('Machine not initialized');
     }
@@ -259,18 +244,21 @@ export class FoundryClient {
     }, 'Job completion');
   }
 
-  generateJobHash(filename: string, additionalData: string = ''): string {
+  generateJobHash(filename, additionalData = '') {
     const data = `${this.machineUuid}|${filename}|${Date.now()}|${additionalData}`;
     const hash = crypto.createHash('sha256').update(data).digest('hex');
     return `job_${hash.slice(0, 16)}_${Date.now()}`;
   }
 
-  async getMetrics(): Promise<any> {
+  async getMetrics() {
     return await this.withRetry(async () => {
-      const response = await fetch(`${this.apiUrl.replace('/main-ts', '')}/metrics`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await fetch(
+        `${this.apiUrl}/metrics`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to fetch metrics`);
@@ -279,7 +267,17 @@ export class FoundryClient {
       return await response.json();
     }, 'Fetch metrics');
   }
+
+  getMachineUuid() {
+    return this.machineUuid || '';
+  }
+
+  getPublicKey() {
+    return this.keyPair ? bs58.encode(this.keyPair.publicKey) : '';
+  }
 }
+
+export default FoundryClient;
 
 // ============================================================================
 // INTEGRATION EXAMPLES
