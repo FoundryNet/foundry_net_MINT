@@ -189,29 +189,27 @@
           document.getElementById('burnRate').textContent = burnRate.toFixed(2);
           document.getElementById('runway').textContent = runway.toFixed(1);
 
-          // Get all recent jobs from Supabase
-          const { data: allJobs } = await window.supabase
-            .from('jobs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(50);
-
+          // Get completed jobs from metrics endpoint (already authenticated)
           const tbody = document.querySelector('#jobsTable tbody');
           tbody.innerHTML='';
-          (allJobs || []).forEach(job=>{
-            const row=tbody.insertRow();
-            const statusColor = job.status==='completed'?'#0f0':job.status==='failed'?'#f00':'#ff0';
-            const statusLabel = job.status==='completed'?'✓ COMPLETED':job.status==='failed'?'✗ FAILED':'→ STARTED';
-            row.innerHTML=`
-              <td>${job.job_hash.substring(0,12)}...</td>
-              <td>${job.machine_uuid.substring(0,8)}...</td>
-              <td style="color:${statusColor};font-weight:bold">${statusLabel}</td>
-              <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
-              <td>${(job.activity_ratio||1).toFixed(2)}x</td>
-              <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
-              <td class="timestamp">${job.started_at ? new Date(job.started_at).toLocaleString() : '--'}</td>
-            `;
-          });
+          
+          if (metrics && metrics.recent_jobs && metrics.recent_jobs.length > 0) {
+            metrics.recent_jobs.forEach(job=>{
+              const row=tbody.insertRow();
+              row.innerHTML=`
+                <td>${job.job_hash.substring(0,12)}...</td>
+                <td>${job.machine_uuid.substring(0,8)}...</td>
+                <td style="color:#0f0;font-weight:bold">✓ COMPLETED</td>
+                <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
+                <td>${(job.activity_ratio||1).toFixed(2)}x</td>
+                <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
+                <td class="timestamp">${job.completed_at ? new Date(job.completed_at).toLocaleString() : '--'}</td>
+              `;
+            });
+          } else {
+            const row = tbody.insertRow();
+            row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No completed jobs yet...</td>';
+          }
 
           // Minting events
           const mintTbody = document.querySelector('#mintingTable tbody');
