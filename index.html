@@ -236,18 +236,24 @@
           if(activityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
         }
 
-        // Get machine count
-        const { count: machineCount } = await window.supabase
-          .from('machines')
-          .select('*',{count:'exact',head:true});
-        document.getElementById('machines').textContent = machineCount||0;
+        // Get machine count from Supabase
+        try {
+          const { count: machineCount } = await window.supabase
+            .from('machines')
+            .select('*',{count:'exact',head:true});
+          document.getElementById('machines').textContent = machineCount||0;
+        } catch(err) {
+          console.error('Failed to get machine count:', err);
+          document.getElementById('machines').textContent = '?';
+        }
 
-        // Get total MINT distributed
-        const { data: payouts } = await window.supabase
-          .from('payouts')
-          .select('amount');
-        const totalMint = payouts?.reduce((sum,p)=>sum+Number(p.amount),0)||0;
-        document.getElementById('mintDist').textContent = totalMint.toFixed(2);
+        // Get total MINT distributed - calculate from metrics
+        if (metrics && metrics.recent_jobs) {
+          const totalMint = metrics.recent_jobs.reduce((sum, job) => sum + Number(job.reward_amount_numeric || 0), 0);
+          document.getElementById('mintDist').textContent = totalMint.toFixed(2);
+        } else {
+          document.getElementById('mintDist').textContent = '0.00';
+        }
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
       } catch(err){ 
