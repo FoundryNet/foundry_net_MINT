@@ -90,6 +90,29 @@
     </div>
   </div>
 
+  <div class="grid">
+    <div class="metric">
+      <div class="metric-label">ACTIVITY RATIO</div>
+      <div class="metric-value" id="activityRatio">--</div>
+      <div class="metric-label">dynamic supply</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">REWARD MULTIPLIER</div>
+      <div class="metric-value" id="rewardMultiplier">--</div>
+      <div class="metric-label">current adjustment</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">BURN RATE</div>
+      <div class="metric-value" id="burnRate">--</div>
+      <div class="metric-label">MINT per hour</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">RUNWAY</div>
+      <div class="metric-value" id="runway">--</div>
+      <div class="metric-label">days remaining</div>
+    </div>
+  </div>
+
   <h2>NETWORK STATUS</h2>
   <div id="alerts">
     <div class="alert-info">Loading...</div>
@@ -114,35 +137,16 @@
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet Protocol Monitor v2.0 | Real-Time Job Feed</div>
+    <div>FoundryNet: Digital Oil Protocol | Supply expands with activity, contracts with less usage | Rewards asymptotically adjust</div>
   </div>
 
   <script type="module">
-    const SOLANA_RPC = 'https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa';
-    const HOT_WALLET = 'GHUXNW7j3MY5ALVK6ZArt6kzDRYKZ9NYSKwFKCM8twL7';
-    const MINT_ADDRESS = '5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da';
+    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
     const MIN_BALANCE = 10;
     let lastJobHash = null;
 
-    async function getTreasuryBalances() {
-      try {
-        const connection = new solanaWeb3.Connection(SOLANA_RPC, 'confirmed');
-        const publicKey = new solanaWeb3.PublicKey(HOT_WALLET);
-        const solLamports = await connection.getBalance(publicKey);
-        const solBalance = solLamports / solanaWeb3.LAMPORTS_PER_SOL;
-        const mintPublicKey = new solanaWeb3.PublicKey(MINT_ADDRESS);
-        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, { mint: mintPublicKey });
-        const mintBalance = tokenAccounts.value.length > 0 ? tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount : 0;
-        return { sol: solBalance, mint: mintBalance };
-      } catch(err) {
-        console.error('Failed to fetch balances:', err);
-        return { sol: null, mint: null };
-      }
-    }
-
     async function getLatestJobs() {
       try {
-        // Get latest 50 completed jobs, NO TIME FILTER
         const { data: jobs, error } = await window.supabase
           .from('jobs')
           .select('*')
@@ -163,22 +167,66 @@
       }
     }
 
+    async function getMetrics() {
+      try {
+        const response = await fetch(METRICS_ENDPOINT, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        console.error('Failed to fetch metrics:', err);
+        return null;
+      }
+    }
+
     async function loadData() {
       document.getElementById('refresh').classList.add('loading');
       try {
-        // Get treasury balances
-        const balances = await getTreasuryBalances();
+        // Get metrics from backend
+        const metrics = await getMetrics();
+        
+        // Treasury data
         const treasuryEl = document.getElementById('treasury');
         const treasuryMetric = document.getElementById('treasuryMetric');
 
-        if(balances.mint!==null && balances.sol!==null){
-          treasuryEl.textContent = `${balances.mint.toFixed(2)} MINT / ${balances.sol.toFixed(3)} SOL`;
-          if(balances.mint < MIN_BALANCE) treasuryMetric.classList.add('critical');
-          else if(balances.mint < MIN_BALANCE*2) treasuryMetric.classList.add('warning');
-          else treasuryMetric.classList.remove('critical','warning');
-        } else treasuryEl.textContent='ERROR';
+        if (metrics && metrics.treasury) {
+          const mint = metrics.treasury.balance_mint ?? null;
+          const sol = metrics.treasury.balance_sol ?? null;
+          
+          if (mint !== null && sol !== null) {
+            treasuryEl.textContent = `${mint.toFixed(2)} MINT / ${sol.toFixed(3)} SOL`;
+            if (mint < MIN_BALANCE) {
+              treasuryMetric.classList.add('critical');
+            } else if (mint < MIN_BALANCE * 2) {
+              treasuryMetric.classList.add('warning');
+            } else {
+              treasuryMetric.classList.remove('critical', 'warning');
+            }
+          } else {
+            treasuryEl.textContent = 'FETCHING...';
+          }
 
-        // Get latest jobs (NO TIME FILTER - just get latest 50)
+          // Dynamic supply metrics
+          document.getElementById('activityRatio').textContent = metrics.activity?.activity_ratio?.toFixed(2) ?? '--';
+          document.getElementById('rewardMultiplier').textContent = metrics.activity?.activity_multiplier?.toFixed(3) ?? '--';
+
+          // Burn rate and runway
+          const burnRate = metrics.treasury.burn_rate_per_hour ?? null;
+          const runway = metrics.treasury.runway_days ?? null;
+          
+          document.getElementById('burnRate').textContent = burnRate !== null ? burnRate.toFixed(3) : '--';
+          document.getElementById('runway').textContent = runway !== null ? runway.toFixed(1) : '--';
+        } else {
+          treasuryEl.textContent = 'ERROR';
+          document.getElementById('activityRatio').textContent = '--';
+          document.getElementById('rewardMultiplier').textContent = '--';
+          document.getElementById('burnRate').textContent = '--';
+          document.getElementById('runway').textContent = '--';
+        }
+
+        // Get latest jobs
         const latestJobs = await getLatestJobs();
         
         // Calculate metrics
@@ -209,21 +257,20 @@
         try {
           const { count: machineCount } = await window.supabase
             .from('machines')
-            .select('*',{count:'exact',head:true});
-          document.getElementById('totalMachines').textContent = machineCount||0;
-        } catch(err) {
+            .select('*', { count: 'exact', head: true });
+          document.getElementById('totalMachines').textContent = machineCount || 0;
+        } catch (err) {
           console.error('Failed to get machine count:', err);
           document.getElementById('totalMachines').textContent = '?';
         }
 
         // Update jobs table
         const tbody = document.querySelector('#jobsTable tbody');
-        tbody.innerHTML='';
+        tbody.innerHTML = '';
         
         if (latestJobs.length > 0) {
-          latestJobs.slice(0, 20).forEach((job, idx)=>{
-            const row=tbody.insertRow();
-            const isNew = job.job_hash === lastJobHash;
+          latestJobs.slice(0, 20).forEach((job, idx) => {
+            const row = tbody.insertRow();
             if (idx === 0 && lastJobHash && job.job_hash !== lastJobHash) {
               row.classList.add('new-job');
             }
@@ -232,12 +279,12 @@
             const ageMin = Math.floor((Date.now() - completedAt.getTime()) / 60000);
             const timeStr = ageMin < 60 ? `${ageMin}m ago` : completedAt.toLocaleDateString();
             
-            row.innerHTML=`
-              <td>${job.job_hash.substring(0,16)}...</td>
-              <td>${job.machine_uuid.substring(0,10)}...</td>
-              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric||0).toFixed(3)} MINT</td>
-              <td>${job.duration_seconds||0}s</td>
-              <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
+            row.innerHTML = `
+              <td>${job.job_hash.substring(0, 16)}...</td>
+              <td>${job.machine_uuid.substring(0, 10)}...</td>
+              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric || 0).toFixed(3)} MINT</td>
+              <td>${job.duration_seconds || 0}s</td>
+              <td>${job.tx_signature ? `<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>` : '--'}</td>
               <td class="timestamp">${timeStr}${ageMin < 5 ? ' <span class="recent-badge">🔴 LIVE</span>' : ''}</td>
             `;
           });
@@ -251,44 +298,46 @@
         }
 
         // Alerts
-        const alertsDiv=document.getElementById('alerts');
-        alertsDiv.innerHTML='';
+        const alertsDiv = document.getElementById('alerts');
+        alertsDiv.innerHTML = '';
         
-        if(balances.mint!==null && balances.mint<MIN_BALANCE) {
-          alertsDiv.innerHTML+='<div class="alert-critical">⚠️ CRITICAL: Treasury below minimum!</div>';
-        } else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) {
-          alertsDiv.innerHTML+='<div class="alert-warning">⚠️ WARNING: Treasury low</div>';
+        if (metrics && metrics.treasury) {
+          const mint = metrics.treasury.balance_mint;
+          if (mint !== null && mint < MIN_BALANCE) {
+            alertsDiv.innerHTML += '<div class="alert-critical">⚠️ CRITICAL: Treasury below minimum!</div>';
+          } else if (mint !== null && mint < MIN_BALANCE * 2) {
+            alertsDiv.innerHTML += '<div class="alert-warning">⚠️ WARNING: Treasury low</div>';
+          }
         }
         
-        if(minutesAgo < 5) {
-          alertsDiv.innerHTML+='<div class="alert-live">🔴 LIVE: Job completed ' + minutesAgo + ' minutes ago</div>';
-        } else if(minutesAgo < 15) {
-          alertsDiv.innerHTML+='<div class="alert-info">✅ ACTIVE: Recent job ' + minutesAgo + ' minutes ago</div>';
-        } else if(minutesAgo < 60) {
-          alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
+        if (minutesAgo < 5) {
+          alertsDiv.innerHTML += '<div class="alert-live">🔴 LIVE: Job completed ' + minutesAgo + ' minutes ago</div>';
+        } else if (minutesAgo < 15) {
+          alertsDiv.innerHTML += '<div class="alert-info">✅ ACTIVE: Recent job ' + minutesAgo + ' minutes ago</div>';
+        } else if (minutesAgo < 60) {
+          alertsDiv.innerHTML += '<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
         } else {
-          alertsDiv.innerHTML+='<div class="alert-warning">⚠️ No recent jobs (60+ minutes)</div>';
+          alertsDiv.innerHTML += '<div class="alert-warning">⚠️ No recent jobs (60+ minutes)</div>';
         }
         
-        alertsDiv.innerHTML+=`<div class="alert-info">📊 ${jobsCount} jobs tracked | ${activeNodes} active machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
+        alertsDiv.innerHTML += `<div class="alert-info">📊 ${jobsCount} jobs tracked | ${activeNodes} active machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
         
-        if(alertsDiv.innerHTML==='') {
-          alertsDiv.innerHTML='<div class="alert-info">✅ All systems normal</div>';
+        if (alertsDiv.innerHTML === '') {
+          alertsDiv.innerHTML = '<div class="alert-info">✅ All systems normal</div>';
         }
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-      } catch(err){ 
+      } catch (err) { 
         console.error('Dashboard error:', err);
-        const alertsDiv=document.getElementById('alerts');
+        const alertsDiv = document.getElementById('alerts');
         alertsDiv.innerHTML = `<div class="alert-critical">⚠️ ERROR: ${err.message}</div>`;
-      }
-      finally{ 
+      } finally { 
         document.getElementById('refresh').classList.remove('loading'); 
       }
     }
 
     loadData();
-    setInterval(loadData, 10000); // Refresh every 10 seconds for live updates
+    setInterval(loadData, 10000);
   </script>
 </body>
 </html>
