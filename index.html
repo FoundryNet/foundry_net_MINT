@@ -19,20 +19,25 @@
     .metric { border:1px solid #0f0; padding:15px; background:#001100; }
     .metric.critical { border-color:#f00; background:#110000; animation:pulse 2s ease-in-out infinite; }
     .metric.warning { border-color:#ff0; background:#111100; }
+    .metric.live { border-color:#0ff; background:#001111; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
     .metric-value{font-size:2rem;font-weight:bold;margin:10px 0;}
     .metric-label{font-size:0.9rem; opacity:0.7;}
     table{width:100%;border-collapse:collapse;margin-top:10px;}
-    th,td{text-align:left;padding:8px;border:1px solid #0f0;}
+    th,td{text-align:left;padding:8px;border:1px solid #0f0;font-size:0.9rem;}
     th{background:#001100;}
     .timestamp{font-size:0.8rem;opacity:0.6;}
+    .recent-badge{color:#0ff;font-weight:bold;font-size:0.7rem;}
     .alert-critical{border:1px solid #f00;background:#110000;padding:10px;margin:5px 0;color:#f00;}
     .alert-warning{border:1px solid #ff0;background:#111100;padding:10px;margin:5px 0;color:#ff0;}
     .alert-info{border:1px solid #0f0;background:#001100;padding:10px;margin:5px 0;color:#0f0;}
+    .alert-live{border:1px solid #0ff;background:#001111;padding:10px;margin:5px 0;color:#0ff;}
     #refresh{position:fixed;top:20px;right:20px;background:#0f0;color:#000;border:none;padding:10px 20px;cursor:pointer;font-family:inherit;font-weight:bold;}
     #refresh:hover{background:#0ff;}
     .footer{margin-top:30px;padding-top:20px;border-top:1px solid #0f0;text-align:center;opacity:0.6;font-size:0.8rem;}
     .loading{opacity:0.5;}
+    .new-job { background:#001111 !important; animation: flash 2s ease-in-out; }
+    @keyframes flash { 0%,100%{opacity:1} 50%{opacity:0.7} }
   </style>
 </head>
 <body>
@@ -45,91 +50,79 @@
       <div class="metric-value" id="treasury">--</div>
       <div class="metric-label">MINT / SOL</div>
     </div>
-    <div class="metric">
-      <div class="metric-label">JOBS COMPLETED</div>
-      <div class="metric-value" id="jobsCompleted">--</div>
-      <div class="metric-label">total processed</div>
+    <div class="metric live">
+      <div class="metric-label">LATEST JOBS</div>
+      <div class="metric-value" id="latestCount">--</div>
+      <div class="metric-label">last 50 completed</div>
     </div>
-    <div class="metric">
+    <div class="metric live">
       <div class="metric-label">ACTIVE MACHINES</div>
       <div class="metric-value" id="machines">--</div>
-      <div class="metric-label">registered</div>
+      <div class="metric-label">in latest batch</div>
     </div>
-    <div class="metric">
+    <div class="metric live">
       <div class="metric-label">MINT DISTRIBUTED</div>
       <div class="metric-value" id="mintDist">--</div>
-      <div class="metric-label">all time</div>
+      <div class="metric-label">latest jobs</div>
     </div>
   </div>
 
   <div class="grid">
     <div class="metric">
-      <div class="metric-label">ACTIVITY RATIO</div>
-      <div class="metric-value" id="activityRatio">--</div>
-      <div class="metric-label">0.5-2.0 range</div>
+      <div class="metric-label">AVG REWARD</div>
+      <div class="metric-value" id="avgReward">--</div>
+      <div class="metric-label">MINT per job</div>
     </div>
     <div class="metric">
-      <div class="metric-label">ACTIVITY MULTIPLIER</div>
-      <div class="metric-value" id="activityMult">--</div>
-      <div class="metric-label">reward adjustment</div>
+      <div class="metric-label">REWARD RANGE</div>
+      <div class="metric-value" id="rewardRange">--</div>
+      <div class="metric-label">min → max</div>
     </div>
     <div class="metric">
-      <div class="metric-label">BURN RATE</div>
-      <div class="metric-value" id="burnRate">--</div>
-      <div class="metric-label">MINT/hour</div>
+      <div class="metric-label">TOTAL MACHINES</div>
+      <div class="metric-value" id="totalMachines">--</div>
+      <div class="metric-label">all time registered</div>
     </div>
     <div class="metric">
-      <div class="metric-label">RUNWAY</div>
-      <div class="metric-value" id="runway">--</div>
-      <div class="metric-label">days until depleted</div>
+      <div class="metric-label">LAST JOB</div>
+      <div class="metric-value" id="lastJobTime">--</div>
+      <div class="metric-label">minutes ago</div>
     </div>
   </div>
 
-  <h2>ACTIVE ALERTS</h2>
+  <h2>NETWORK STATUS</h2>
   <div id="alerts">
-    <div class="alert-info">No active alerts</div>
+    <div class="alert-info">Loading...</div>
   </div>
 
-  <h2>RECENT JOBS</h2>
+  <h2>LATEST JOBS (LIVE FEED - NO TIME FILTER)</h2>
   <table id="jobsTable">
     <thead>
       <tr>
         <th>JOB HASH</th>
         <th>MACHINE</th>
-        <th>STATUS</th>
         <th>REWARD</th>
-        <th>ACTIVITY</th>
+        <th>DURATION</th>
         <th>TX</th>
-        <th>TIME</th>
+        <th>COMPLETED</th>
       </tr>
     </thead>
-    <tbody></tbody>
-  </table>
-
-  <h2>RECENT MINTING EVENTS</h2>
-  <table id="mintingTable">
-    <thead>
-      <tr>
-        <th>AMOUNT MINTED</th>
-        <th>REASON</th>
-        <th>ACTIVITY RATIO</th>
-        <th>TIMESTAMP</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
+    <tbody>
+      <tr><td colspan="6" style="text-align:center;opacity:0.5">Loading...</td></tr>
+    </tbody>
   </table>
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet Protocol Monitor v1.0 | Activity-Responsive Settlement Layer</div>
+    <div>FoundryNet Protocol Monitor v2.0 | Real-Time Job Feed</div>
   </div>
 
   <script type="module">
     const SOLANA_RPC = 'https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa';
     const HOT_WALLET = 'GHUXNW7j3MY5ALVK6ZArt6kzDRYKZ9NYSKwFKCM8twL7';
     const MINT_ADDRESS = '5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da';
-    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
     const MIN_BALANCE = 10;
+    let lastJobHash = null;
 
     async function getTreasuryBalances() {
       try {
@@ -147,14 +140,26 @@
       }
     }
 
-    async function getMetricsFromBackend() {
+    async function getLatestJobs() {
       try {
-        const response = await fetch(METRICS_ENDPOINT + '?t=' + Date.now());
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-      } catch(err) {
-        console.error('Failed to fetch metrics:', err);
-        return null;
+        // Get latest 50 completed jobs, NO TIME FILTER
+        const { data: jobs, error } = await window.supabase
+          .from('jobs')
+          .select('*')
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+          .limit(50);
+        
+        if (error) {
+          console.error('Supabase error:', error);
+          throw error;
+        }
+        
+        console.log(`Fetched ${jobs?.length || 0} latest jobs`);
+        return jobs || [];
+      } catch (err) {
+        console.error('Failed to fetch jobs:', err);
+        return [];
       }
     }
 
@@ -173,90 +178,109 @@
           else treasuryMetric.classList.remove('critical','warning');
         } else treasuryEl.textContent='ERROR';
 
-        // Get metrics from backend
-        const metrics = await getMetricsFromBackend();
+        // Get latest jobs (NO TIME FILTER - just get latest 50)
+        const latestJobs = await getLatestJobs();
         
-        if (metrics) {
-          const jobsCompleted = metrics.network?.total_jobs_completed || 0;
-          const activityRatio = metrics.activity?.activity_ratio || 1.0;
-          const activityMult = metrics.activity?.activity_multiplier || 1.0;
-          const burnRate = metrics.activity?.burn_rate_per_hour || 0;
-          const runway = metrics.treasury?.runway_days || 999;
-          
-          document.getElementById('jobsCompleted').textContent = jobsCompleted;
-          document.getElementById('activityRatio').textContent = activityRatio.toFixed(2);
-          document.getElementById('activityMult').textContent = activityMult.toFixed(3);
-          document.getElementById('burnRate').textContent = burnRate.toFixed(2);
-          document.getElementById('runway').textContent = runway.toFixed(1);
+        // Calculate metrics
+        const jobsCount = latestJobs.length;
+        const activeNodes = new Set(latestJobs.map(j => j.machine_uuid)).size;
+        const totalMint = latestJobs.reduce((sum, j) => sum + Number(j.reward_amount_numeric || 0), 0);
+        const avgReward = jobsCount > 0 ? totalMint / jobsCount : 0;
+        
+        const rewards = latestJobs.map(j => Number(j.reward_amount_numeric || 0)).filter(r => r > 0);
+        const minReward = rewards.length > 0 ? Math.min(...rewards) : 0;
+        const maxReward = rewards.length > 0 ? Math.max(...rewards) : 0;
+        
+        // Time since last job
+        const lastJobTimestamp = latestJobs[0]?.completed_at;
+        const minutesAgo = lastJobTimestamp 
+          ? Math.floor((Date.now() - new Date(lastJobTimestamp).getTime()) / 60000)
+          : 999;
+        
+        // Update metrics
+        document.getElementById('latestCount').textContent = jobsCount;
+        document.getElementById('machines').textContent = activeNodes;
+        document.getElementById('mintDist').textContent = totalMint.toFixed(2);
+        document.getElementById('avgReward').textContent = avgReward.toFixed(3);
+        document.getElementById('rewardRange').textContent = `${minReward.toFixed(2)} → ${maxReward.toFixed(2)}`;
+        document.getElementById('lastJobTime').textContent = minutesAgo < 60 ? minutesAgo : '60+';
 
-          // Get completed jobs from metrics endpoint (already has proper auth)
-          const tbody = document.querySelector('#jobsTable tbody');
-          tbody.innerHTML='';
-          
-          if (metrics && metrics.recent_jobs && metrics.recent_jobs.length > 0) {
-            metrics.recent_jobs.forEach(job=>{
-              const row=tbody.insertRow();
-              row.innerHTML=`
-                <td>${job.job_hash.substring(0,12)}...</td>
-                <td>${job.machine_uuid.substring(0,8)}...</td>
-                <td style="color:#0f0;font-weight:bold">✓ COMPLETED</td>
-                <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
-                <td>${(job.activity_ratio||1).toFixed(2)}x</td>
-                <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
-                <td class="timestamp">${job.completed_at ? new Date(job.completed_at).toLocaleString() : '--'}</td>
-              `;
-            });
-          } else {
-            const row = tbody.insertRow();
-            row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No completed jobs yet...</td>';
-          }
-
-          // Minting events
-          const mintTbody = document.querySelector('#mintingTable tbody');
-          mintTbody.innerHTML='';
-          (metrics.recent_minting_events || []).forEach(evt=>{
-            const row=mintTbody.insertRow();
-            row.innerHTML=`
-              <td>${(evt.amount||0).toFixed(2)} MINT</td>
-              <td>${evt.reason||'--'}</td>
-              <td>${(evt.activity_ratio||1).toFixed(2)}x</td>
-              <td class="timestamp">${evt.timestamp ? new Date(evt.timestamp).toLocaleString() : '--'}</td>
-            `;
-          });
-
-          // Alerts
-          const alertsDiv=document.getElementById('alerts');
-          alertsDiv.innerHTML='';
-          if(balances.mint!==null && balances.mint<MIN_BALANCE) alertsDiv.innerHTML+='<div class="alert-critical">⚠️ Treasury below minimum!</div>';
-          else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ Treasury low</div>';
-          if(jobsCompleted===0) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ No jobs completed yet</div>';
-          if(activityRatio > 1.5) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ High activity - rewards cooling</div>';
-          if(activityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
-        }
-
-        // Get totals from metrics endpoint (backend calculates these)
-        if (metrics) {
-          const jobsCompleted = metrics.network?.total_jobs_completed || 0;
-          document.getElementById('jobsCompleted').textContent = jobsCompleted;
-          
-          const totalMint = metrics.recent_jobs?.reduce((sum, job) => sum + Number(job.reward_amount_numeric || 0), 0) || 0;
-          document.getElementById('mintDist').textContent = totalMint.toFixed(2);
-        }
-
-        // Get machine count from Supabase
+        // Get total machines count
         try {
           const { count: machineCount } = await window.supabase
             .from('machines')
             .select('*',{count:'exact',head:true});
-          document.getElementById('machines').textContent = machineCount||0;
+          document.getElementById('totalMachines').textContent = machineCount||0;
         } catch(err) {
           console.error('Failed to get machine count:', err);
-          document.getElementById('machines').textContent = '?';
+          document.getElementById('totalMachines').textContent = '?';
+        }
+
+        // Update jobs table
+        const tbody = document.querySelector('#jobsTable tbody');
+        tbody.innerHTML='';
+        
+        if (latestJobs.length > 0) {
+          latestJobs.slice(0, 20).forEach((job, idx)=>{
+            const row=tbody.insertRow();
+            const isNew = job.job_hash === lastJobHash;
+            if (idx === 0 && lastJobHash && job.job_hash !== lastJobHash) {
+              row.classList.add('new-job');
+            }
+            
+            const completedAt = new Date(job.completed_at);
+            const ageMin = Math.floor((Date.now() - completedAt.getTime()) / 60000);
+            const timeStr = ageMin < 60 ? `${ageMin}m ago` : completedAt.toLocaleDateString();
+            
+            row.innerHTML=`
+              <td>${job.job_hash.substring(0,16)}...</td>
+              <td>${job.machine_uuid.substring(0,10)}...</td>
+              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric||0).toFixed(3)} MINT</td>
+              <td>${job.duration_seconds||0}s</td>
+              <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
+              <td class="timestamp">${timeStr}${ageMin < 5 ? ' <span class="recent-badge">🔴 LIVE</span>' : ''}</td>
+            `;
+          });
+          
+          if (latestJobs[0]) {
+            lastJobHash = latestJobs[0].job_hash;
+          }
+        } else {
+          const row = tbody.insertRow();
+          row.innerHTML = '<td colspan="6" style="text-align:center;opacity:0.5">No completed jobs found</td>';
+        }
+
+        // Alerts
+        const alertsDiv=document.getElementById('alerts');
+        alertsDiv.innerHTML='';
+        
+        if(balances.mint!==null && balances.mint<MIN_BALANCE) {
+          alertsDiv.innerHTML+='<div class="alert-critical">⚠️ CRITICAL: Treasury below minimum!</div>';
+        } else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) {
+          alertsDiv.innerHTML+='<div class="alert-warning">⚠️ WARNING: Treasury low</div>';
+        }
+        
+        if(minutesAgo < 5) {
+          alertsDiv.innerHTML+='<div class="alert-live">🔴 LIVE: Job completed ' + minutesAgo + ' minutes ago</div>';
+        } else if(minutesAgo < 15) {
+          alertsDiv.innerHTML+='<div class="alert-info">✅ ACTIVE: Recent job ' + minutesAgo + ' minutes ago</div>';
+        } else if(minutesAgo < 60) {
+          alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
+        } else {
+          alertsDiv.innerHTML+='<div class="alert-warning">⚠️ No recent jobs (60+ minutes)</div>';
+        }
+        
+        alertsDiv.innerHTML+=`<div class="alert-info">📊 ${jobsCount} jobs tracked | ${activeNodes} active machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
+        
+        if(alertsDiv.innerHTML==='') {
+          alertsDiv.innerHTML='<div class="alert-info">✅ All systems normal</div>';
         }
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
       } catch(err){ 
-        console.error('Dashboard error:', err); 
+        console.error('Dashboard error:', err);
+        const alertsDiv=document.getElementById('alerts');
+        alertsDiv.innerHTML = `<div class="alert-critical">⚠️ ERROR: ${err.message}</div>`;
       }
       finally{ 
         document.getElementById('refresh').classList.remove('loading'); 
@@ -264,7 +288,7 @@
     }
 
     loadData();
-    setInterval(loadData, 30000);
+    setInterval(loadData, 10000); // Refresh every 10 seconds for live updates
   </script>
 </body>
 </html>
