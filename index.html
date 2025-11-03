@@ -46,9 +46,9 @@
       <div class="metric-label">MINT / SOL</div>
     </div>
     <div class="metric">
-      <div class="metric-label">JOBS TODAY</div>
-      <div class="metric-value" id="jobsToday">--</div>
-      <div class="metric-label" id="completionRate">-- completion</div>
+      <div class="metric-label">JOBS COMPLETED</div>
+      <div class="metric-value" id="jobsCompleted">--</div>
+      <div class="metric-label">total processed</div>
     </div>
     <div class="metric">
       <div class="metric-label">ACTIVE MACHINES</div>
@@ -128,6 +128,7 @@
     const SOLANA_RPC = 'https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa';
     const HOT_WALLET = 'GHUXNW7j3MY5ALVK6ZArt6kzDRYKZ9NYSKwFKCM8twL7';
     const MINT_ADDRESS = '5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da';
+    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
     const MIN_BALANCE = 10;
 
     async function getTreasuryBalances() {
@@ -146,9 +147,21 @@
       }
     }
 
+    async function getMetricsFromBackend() {
+      try {
+        const response = await fetch(METRICS_ENDPOINT + '?t=' + Date.now());
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch(err) {
+        console.error('Failed to fetch metrics:', err);
+        return null;
+      }
+    }
+
     async function loadData() {
       document.getElementById('refresh').classList.add('loading');
       try {
+        // Get treasury balances
         const balances = await getTreasuryBalances();
         const treasuryEl = document.getElementById('treasury');
         const treasuryMetric = document.getElementById('treasuryMetric');
@@ -160,88 +173,89 @@
           else treasuryMetric.classList.remove('critical','warning');
         } else treasuryEl.textContent='ERROR';
 
-        const { data: jobs, error: jobsError } = await window.supabase
-          .from('jobs')
-          .select('*')
-          .order('created_at',{ascending:false})
-          .limit(50);
-        if(jobsError){ console.error('Supabase error:', jobsError); return; }
+        // Get metrics from backend
+        const metrics = await getMetricsFromBackend();
+        
+        if (metrics) {
+          const jobsCompleted = metrics.network?.total_jobs_completed || 0;
+          const activityRatio = metrics.activity?.activity_ratio || 1.0;
+          const activityMult = metrics.activity?.activity_multiplier || 1.0;
+          const burnRate = metrics.activity?.burn_rate_per_hour || 0;
+          const runway = metrics.treasury?.runway_days || 999;
+          
+          document.getElementById('jobsCompleted').textContent = jobsCompleted;
+          document.getElementById('activityRatio').textContent = activityRatio.toFixed(2);
+          document.getElementById('activityMult').textContent = activityMult.toFixed(3);
+          document.getElementById('burnRate').textContent = burnRate.toFixed(2);
+          document.getElementById('runway').textContent = runway.toFixed(1);
 
+          // Get all recent jobs from Supabase
+          const { data: allJobs } = await window.supabase
+            .from('jobs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+          const tbody = document.querySelector('#jobsTable tbody');
+          tbody.innerHTML='';
+          (allJobs || []).forEach(job=>{
+            const row=tbody.insertRow();
+            const statusColor = job.status==='completed'?'#0f0':job.status==='failed'?'#f00':'#ff0';
+            const statusLabel = job.status==='completed'?'✓ COMPLETED':job.status==='failed'?'✗ FAILED':'→ STARTED';
+            row.innerHTML=`
+              <td>${job.job_hash.substring(0,12)}...</td>
+              <td>${job.machine_uuid.substring(0,8)}...</td>
+              <td style="color:${statusColor};font-weight:bold">${statusLabel}</td>
+              <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
+              <td>${(job.activity_ratio||1).toFixed(2)}x</td>
+              <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
+              <td class="timestamp">${job.started_at ? new Date(job.started_at).toLocaleString() : '--'}</td>
+            `;
+          });
+
+          // Minting events
+          const mintTbody = document.querySelector('#mintingTable tbody');
+          mintTbody.innerHTML='';
+          (metrics.recent_minting_events || []).forEach(evt=>{
+            const row=mintTbody.insertRow();
+            row.innerHTML=`
+              <td>${(evt.amount||0).toFixed(2)} MINT</td>
+              <td>${evt.reason||'--'}</td>
+              <td>${(evt.activity_ratio||1).toFixed(2)}x</td>
+              <td class="timestamp">${evt.timestamp ? new Date(evt.timestamp).toLocaleString() : '--'}</td>
+            `;
+          });
+
+          // Alerts
+          const alertsDiv=document.getElementById('alerts');
+          alertsDiv.innerHTML='';
+          if(balances.mint!==null && balances.mint<MIN_BALANCE) alertsDiv.innerHTML+='<div class="alert-critical">⚠️ Treasury below minimum!</div>';
+          else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ Treasury low</div>';
+          if(jobsCompleted===0) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ No jobs completed yet</div>';
+          if(activityRatio > 1.5) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ High activity - rewards cooling</div>';
+          if(activityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
+        }
+
+        // Get machine count
         const { count: machineCount } = await window.supabase
           .from('machines')
           .select('*',{count:'exact',head:true});
+        document.getElementById('machines').textContent = machineCount||0;
 
+        // Get total MINT distributed
         const { data: payouts } = await window.supabase
           .from('payouts')
-          .select('amount, activity_ratio');
-
-        const { data: mintingEvents } = await window.supabase
-          .from('minting_events')
-          .select('*')
-          .order('timestamp', {ascending:false})
-          .limit(10);
-
+          .select('amount');
         const totalMint = payouts?.reduce((sum,p)=>sum+Number(p.amount),0)||0;
-        const avgActivityRatio = payouts && payouts.length > 0 
-          ? payouts.reduce((sum,p)=>sum+Number(p.activity_ratio||1),0) / payouts.length
-          : 1.0;
-
-        const activityMult = Math.pow(Math.max(0.5, Math.min(2.0, avgActivityRatio)), -0.4);
-        const burnRate = payouts?.length > 0 ? totalMint / 24 : 0;
-        const runway = burnRate > 0 && balances.mint !== null ? balances.mint / (burnRate * 24) : 999;
-
-        const today = new Date().toISOString().split('T')[0];
-        const todayJobs = jobs.filter(j=>j.started_at?.startsWith(today))||[];
-        const completedToday = todayJobs.filter(j=>j.status==='completed').length;
-
-        document.getElementById('jobsToday').textContent = todayJobs.length;
-        document.getElementById('completionRate').textContent = `${todayJobs.length>0?Math.round((completedToday/todayJobs.length)*100):0}% completion`;
-        document.getElementById('machines').textContent = machineCount||0;
         document.getElementById('mintDist').textContent = totalMint.toFixed(2);
-        document.getElementById('activityRatio').textContent = avgActivityRatio.toFixed(2);
-        document.getElementById('activityMult').textContent = activityMult.toFixed(3);
-        document.getElementById('burnRate').textContent = burnRate.toFixed(2);
-        document.getElementById('runway').textContent = runway.toFixed(1);
-
-        const tbody = document.querySelector('#jobsTable tbody');
-        tbody.innerHTML='';
-        todayJobs.slice(0,20).forEach(job=>{
-          const row=tbody.insertRow();
-          const statusColor = job.status==='completed'?'#0f0':job.status==='failed'?'#f00':'#ff0';
-          row.innerHTML=`
-            <td>${job.job_hash.substring(0,12)}...</td>
-            <td>${job.machine_uuid.substring(0,8)}...</td>
-            <td style="color:${statusColor}">${job.status.toUpperCase()}</td>
-            <td>${(job.reward_amount_numeric||0).toFixed(2)} MINT</td>
-            <td>${(job.activity_ratio||1).toFixed(2)}x</td>
-            <td>${job.tx_signature?`<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>`:'--'}</td>
-            <td class="timestamp">${job.started_at ? new Date(job.started_at).toLocaleString() : '--'}</td>
-          `;
-        });
-
-        const mintTbody = document.querySelector('#mintingTable tbody');
-        mintTbody.innerHTML='';
-        (mintingEvents||[]).slice(0,10).forEach(evt=>{
-          const row=mintTbody.insertRow();
-          row.innerHTML=`
-            <td>${(evt.amount||0).toFixed(2)} MINT</td>
-            <td>${evt.reason||'--'}</td>
-            <td>${(evt.activity_ratio||1).toFixed(2)}x</td>
-            <td class="timestamp">${evt.timestamp ? new Date(evt.timestamp).toLocaleString() : '--'}</td>
-          `;
-        });
-
-        const alertsDiv=document.getElementById('alerts');
-        alertsDiv.innerHTML='';
-        if(balances.mint!==null && balances.mint<MIN_BALANCE) alertsDiv.innerHTML+='<div class="alert-critical">⚠️ Treasury below minimum!</div>';
-        else if(balances.mint!==null && balances.mint<MIN_BALANCE*2) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ Treasury low</div>';
-        if(todayJobs.length===0) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ No jobs processed today</div>';
-        if(avgActivityRatio > 1.5) alertsDiv.innerHTML+='<div class="alert-warning">⚠️ High activity - rewards cooling</div>';
-        if(avgActivityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-      } catch(err){ console.error('Dashboard error:', err); }
-      finally{ document.getElementById('refresh').classList.remove('loading'); }
+      } catch(err){ 
+        console.error('Dashboard error:', err); 
+      }
+      finally{ 
+        document.getElementById('refresh').classList.remove('loading'); 
+      }
     }
 
     loadData();
