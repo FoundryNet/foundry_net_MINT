@@ -189,7 +189,7 @@
           document.getElementById('burnRate').textContent = burnRate.toFixed(2);
           document.getElementById('runway').textContent = runway.toFixed(1);
 
-          // Get completed jobs from metrics endpoint (already authenticated)
+          // Get completed jobs from metrics endpoint (already has proper auth)
           const tbody = document.querySelector('#jobsTable tbody');
           tbody.innerHTML='';
           
@@ -234,6 +234,15 @@
           if(activityRatio < 0.7) alertsDiv.innerHTML+='<div class="alert-info">ℹ️ Low activity - rewards heating</div>';
         }
 
+        // Get totals from metrics endpoint (backend calculates these)
+        if (metrics) {
+          const jobsCompleted = metrics.network?.total_jobs_completed || 0;
+          document.getElementById('jobsCompleted').textContent = jobsCompleted;
+          
+          const totalMint = metrics.recent_jobs?.reduce((sum, job) => sum + Number(job.reward_amount_numeric || 0), 0) || 0;
+          document.getElementById('mintDist').textContent = totalMint.toFixed(2);
+        }
+
         // Get machine count from Supabase
         try {
           const { count: machineCount } = await window.supabase
@@ -243,14 +252,6 @@
         } catch(err) {
           console.error('Failed to get machine count:', err);
           document.getElementById('machines').textContent = '?';
-        }
-
-        // Get total MINT distributed - calculate from metrics
-        if (metrics && metrics.recent_jobs) {
-          const totalMint = metrics.recent_jobs.reduce((sum, job) => sum + Number(job.reward_amount_numeric || 0), 0);
-          document.getElementById('mintDist').textContent = totalMint.toFixed(2);
-        } else {
-          document.getElementById('mintDist').textContent = '0.00';
         }
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
