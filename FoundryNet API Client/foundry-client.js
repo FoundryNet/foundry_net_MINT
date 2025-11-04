@@ -233,14 +233,14 @@ export class FoundryClient {
         throw new Error(`Job completion failed: ${error}`);
       }
 
-      const result = await response.json();
-      this.log('info', 'Job completed - MINT earned!', {
-        jobHash,
-        reward: result.reward,
-        txSignature: result.tx_signature,
-        activityRatio: result.activity_ratio,
-      });
-      return result;
+     const result = await response.json();
+this.log('info', 'Job completed - MINT earned!', {
+  jobHash,
+  reward: result.reward_net,  // ← Use reward_net instead of reward
+  txSignature: result.tx_signature,
+  activityRatio: result.activity_ratio,
+});
+return result;
     }, 'Job completion');
   }
 
