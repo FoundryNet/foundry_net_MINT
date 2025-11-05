@@ -1,4 +1,5 @@
 # foundry_client.py
+https://pypi.org/project/foundry-client/1.0.0/
 
 import nacl.signing
 import nacl.encoding
