@@ -283,3 +283,169 @@ class FoundryClient:
         if self.verify_key:
             return base58.b58encode(bytes(self.verify_key)).decode('utf-8')
         return ''
+
+
+/**
+ * LangChain Agent Example
+ * Integrates FoundryClient with LangChain agent execution
+ */
+export async function exampleLangChainAgent(client: FoundryClient, query: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('langchain_agent', query);
+  await client.submitJob(jobHash, 1.0, { job_type: 'langchain_agent', query });
+
+  // Simulate agent execution (in production, call your LangChain pipeline)
+  console.log(`[LangChain Agent] Processing: ${query}`);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * LangGraph Workflow Example
+ * Tracks complex AI graph flows
+ */
+export async function exampleLangGraphWorkflow(client: FoundryClient, workflowInput: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('langgraph_workflow', JSON.stringify(workflowInput));
+  await client.submitJob(jobHash, 1.2, { job_type: 'langgraph', input: workflowInput });
+
+  console.log(`[LangGraph] Executing workflow`);
+  await new Promise(resolve => setTimeout(resolve, 1500));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * N8N Automation Example
+ * Wraps N8N workflow execution
+ */
+export async function exampleN8NAutomation(client: FoundryClient, taskData: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('n8n_task', JSON.stringify(taskData));
+  await client.submitJob(jobHash, 1.0, { job_type: 'automation', task: taskData });
+
+  console.log(`[N8N] Running automation`);
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * GPU Training Job Example
+ * Rewards ML training runs
+ */
+export async function exampleGpuTrainingJob(client: FoundryClient, config: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('gpu_training', JSON.stringify(config));
+  await client.submitJob(jobHash, 1.8, { job_type: 'gpu_training', model: config.model });
+
+  console.log(`[GPU Training] Training model: ${config.model}`);
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * 3D Printer Integration Example
+ * Hooks into print completion
+ */
+export async function example3DPrinterJob(client: FoundryClient, printJob: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('3d_print', printJob.file);
+  await client.submitJob(jobHash, 1.2, { job_type: '3d_print', file: printJob.file });
+
+  console.log(`[3D Printer] Printing: ${printJob.file}`);
+  await new Promise(resolve => setTimeout(resolve, 2500));
+
+  const result = await client.completeJob(jobHash, printJob.wallet || 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * CNC Machine Example
+ * Rewards toolpath execution
+ */
+export async function exampleCNCJob(client: FoundryClient, toolpath: any): Promise<JobResult> {
+  const jobHash = client.generateJobHash('cnc_job', toolpath.id);
+  await client.submitJob(jobHash, 1.8, { job_type: 'cnc', steps: toolpath.steps });
+
+  console.log(`[CNC] Executing toolpath: ${toolpath.id}`);
+  await new Promise(resolve => setTimeout(resolve, 1800));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * Robot Task Example
+ * Tracks autonomous robot work
+ */
+export async function exampleRobotTask(client: FoundryClient, robotId: string, task: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('robot_task', robotId);
+  await client.submitJob(jobHash, 1.5, { job_type: 'robot', id: robotId, task });
+
+  console.log(`[Robot] Executing task: ${task}`);
+  await new Promise(resolve => setTimeout(resolve, 1200));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * Simple On-Chain Verification Example
+ * Rewards verification work
+ */
+export async function exampleOnChainVerification(client: FoundryClient, txId: string): Promise<JobResult> {
+  const jobHash = client.generateJobHash('onchain_verify', txId);
+  await client.submitJob(jobHash, 1.0, { job_type: 'verification', tx: txId });
+
+  console.log(`[Verification] Verifying transaction: ${txId}`);
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * Batch Data Processing Example
+ * Rewards batch processing jobs
+ */
+export async function exampleBatchProcessor(client: FoundryClient, batchSize: number): Promise<JobResult> {
+  const jobHash = client.generateJobHash('batch_process', `batch_${batchSize}`);
+  const complexity = Math.min(2.0, 0.5 + (batchSize / 1000));
+  await client.submitJob(jobHash, complexity, { job_type: 'batch', size: batchSize });
+
+  console.log(`[Batch] Processing ${batchSize} items`);
+  const processingTime = Math.min(5000, 100 + batchSize * 2);
+  await new Promise(resolve => setTimeout(resolve, processingTime));
+
+  const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+  return result;
+}
+
+/**
+ * Multi-Agent Coordination Example
+ * Tracks coordinated work across multiple agents
+ */
+export async function exampleMultiAgentCoordination(
+  clients: FoundryClient[],
+  taskName: string
+): Promise<JobResult[]> {
+  const results: JobResult[] = [];
+
+  for (let i = 0; i < clients.length; i++) {
+    const client = clients[i];
+    const jobHash = client.generateJobHash('multi_agent', `${taskName}_agent_${i}`);
+    await client.submitJob(jobHash, 1.0, { job_type: 'coordination', task: taskName, agent: i });
+
+    console.log(`[Agent ${i}] Executing coordinated task`);
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const result = await client.completeJob(jobHash, 'YOUR_WALLET_ADDRESS');
+    results.push(result);
+  }
+
+  return results;
+}
+
+export default FoundryClient;
