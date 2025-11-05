@@ -285,6 +285,10 @@ class FoundryClient:
         return ''
 
 
+// ============================================================================
+// INTEGRATION EXAMPLES
+// ============================================================================
+
 /**
  * LangChain Agent Example
  * Integrates FoundryClient with LangChain agent execution
