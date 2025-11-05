@@ -1,297 +1,184 @@
-FoundryNet MINT Protocol
-Economic settlement layer for autonomous systems.
-Autonomous agents, robots, 3D printers, CNC machines, and any entity doing verifiable work earn MINT tokens instantly. No staking. No capital required. Just work and get paid.
-
-What Is FoundryNet?
-FoundryNet is infrastructure for autonomous coordination. Instead of centralized payment processors or complex governance, work gets:
-
-Verified on-chain (Solana)
-Rewarded by formula (activity-responsive)
-Settled instantly (SPL token transfer)
-
-The formula self-corrects. More work = lower rewards (cooling). Less work = higher rewards (heating). No governance needed.
-
-Quick Start
-Installation
-bashnpm install tweetnacl bs58 uuid
-Download foundry-client.js from the repository.
-Basic Usage
-javascriptimport { FoundryClient } from './foundry-client.js';
-
-// Initialize (saves credentials locally)
-const client = new FoundryClient();
-await client.init({ type: 'agent', model: 'langchain' });
-
-// Start work
-const jobHash = client.generateJobHash('my_task');
-await client.submitJob(jobHash, 1.0, { task: 'data_processing' });
-
-// Simulate work (replace with real work)
-await new Promise(r => setTimeout(r, 5000));
-
-// Complete and earn MINT
-const result = await client.completeJob(jobHash, 'YOUR_SOLANA_WALLET');
-
-console.log(`Earned: ${result.reward} MINT`);
-console.log(`View: ${result.solscan}`);
-That's it. You're earning.
-
-Supported Entity Types
-
-AI Agents (LangChain, N8N, Make.com automations)
-3D Printers (OctoPrint, Klipper, Marlin)
-CNC Machines (GRBL, LinuxCNC)
-Robots & RaaS (Any autonomous entity)
-Manufacturing Equipment (Laser cutters, pick-and-place)
-Custom DIY (Anything that can HTTP + sign messages)
-
-
-How It Works
-1. Register Machine
-First time only. Generates Ed25519 keypair, saves to .foundry_credentials.json.
-javascriptawait client.init({ type: 'printer', model: 'Ender 3' });
-2. Submit Job
-When work starts, register it:
-javascriptconst jobHash = client.generateJobHash('part_file.gcode');
-await client.submitJob(jobHash, 1.0, { file: 'part_file.gcode' });
-Complexity parameter (0.5-2.0):
-
+FoundryNet
+Universal DePIN Protocol for Work Settlement
+A decentralized infrastructure layer for autonomous systems to prove work, get verified on-chain, and earn MINT tokens instantly on Solana.
+Status: Production v2
+Stack: Deno edge functions + Solana Anchor program + Node.js client SDK
+Executive Summary
+FoundryNet is a horizontal DePIN protocol, not a vertical market. Any machine capable of HTTP calls and cryptographic signatures can register, execute work, and earn tokens. The protocol doesn't gatekeep by device type—Prusa 3D printers, Makerbots, CNC machines, autonomous vehicles, AI agents, IoT sensors, all plug in the same way.
+Work settlement is instant. Machines submit a job hash, prove work completion with an Ed25519 signature, and receive MINT directly via SPL token transfer on Solana. No governance needed. No staking. No application process.
+Architecture
+System Components
+Edge Functions (Deno): Supabase Edge Functions running TypeScript. Handles machine registration, job submission, job completion, reward calculation, on-chain settlement.
+Solana Anchor Program: On-chain state machine for recording jobs, tracking challenges, auto-replenishing treasury via minting logic.
+Database (Supabase PostgreSQL): Stores machine metadata, job history, job payloads, transaction signatures for audit trail.
+Client SDK (Node.js/ES6): npm package. Handles machine initialization, job hashing, cryptographic signing, retry logic, metrics polling.
+Treasury Wallet (Hot Wallet): Solana keypair with SPL token authority. Auto-replenishes from on-chain minting logic when reserves drop.
+Data Flow
+Machine Init: client.init() → Ed25519 keypair → .foundry_credentials.json
+Job Register: generateJobHash() → POST /submit-job → Supabase INSERT
+Work Execution: [Real hardware does real work]
+Job Complete: completeJob() → Ed25519 signature → POST /complete-job
+Verification: Backend verifies signature, duration, rate limits
+Calculation: Calculate reward (base + activity ratio + decay)
+Treasury Fee: Split: 2% → treasury, 98% → machine
+Settlement: Two SPL transfers in single tx → Confirm → DB update
+Reward Mechanics
+Base Reward Calculation
+Formula:
+reward = (duration_seconds × 0.005 MINT/sec) × complexity × activity_ratio^(-0.4) × decay_multiplier
+Base Rate
+0.005 MINT per second of work. Non-linear tapering after 30 minutes: sqrt() function dampens rewards for very long jobs, preventing runaway emissions.
+Complexity Multiplier
+Range: 0.5 - 2.0. Machines report complexity of work:
+0.5 = simple task (e.g., printing a basic part)
 1.0 = baseline (default)
-1.5 = more complex task
-0.8 = simpler task
-
-3. Complete Job
-When work finishes, sign proof and earn:
-javascriptconst result = await client.completeJob(jobHash, 'YOUR_SOLANA_WALLET');
-Returns:
-
-reward: MINT earned
-tx_signature: On-chain proof
-solscan: Link to transaction
-activity_ratio: Current network activity (0.5-2.0x)
+1.5 = high complexity (e.g., multi-material print)
+2.0 = maximum complexity
+Tier Multipliers
+Different machine types have different base multipliers:
 
 
-The Formula
-reward = (duration_seconds × 0.005) × complexity × activity_ratio^(-0.4)
-Example:
+Activity Ratio
+Real-time elasticity. Measures network utilization over a rolling 1-hour window:
+activity_ratio = (total_runtime_in_window) / (active_nodes × baseline_runtime)
+Then applies dampening via exponential decay (0.3/hour pull rate) to smooth out spikes.
+0.5 (quiet) → reward multiplier = 1.74x (attracts work)
+1.0 (equilibrium) → reward multiplier = 1.0x (baseline)
+2.0 (busy) → reward multiplier = 0.76x (cools off demand)
+Decay Multiplier
+Time-based depreciation. Exponential model with 5-day half-life. After N days since launch:
+decay_mult = max(0.5, 0.5 ^ (days_since_launch / 5))
+Day 0: 1.0x | Day 5: 0.5x (half-life) | Day 10: 0.25x | Day ∞: min 0.5x
+Min/Max Reward Bounds
+Regardless of formula output, rewards are clamped: 0.5 MINT (min) to 10 MINT (max) per job.
+Treasury Fee Structure
+Every completed job is split 2/98:
+98% → Machine owner's wallet
+2% → Treasury (HPgJJNMHWyu3imLSSQkTV8LsvubM4Aa64n4z4Vm2dvu8)
+Both transfers execute atomically in a single Solana transaction. If either fails, the entire job settlement fails and is marked as failed in the database.
+Treasury accumulation funds operational costs (RPC, Supabase, API infrastructure).
+Dynamic Supply Mechanics
+Supply is uncapped and follows demand. The protocol auto-mints new MINT tokens when treasury reserves fall below minimum thresholds. This is pure Gilderian economics—value extracted from real work, not printed arbitrarily.
+Treasury Replenishment
+Three-tier minting logic:
+Critical (< 10M MINT)
+Mint enough MINT to sustain 90 days at current burn rate. This is emergency replenishment.
+Opportunistic (10M - 20M MINT)
+Mint 30 days' worth of burn rate. Network is active, reserves are moderate.
+Healthy (> 20M MINT)
+No minting needed. Treasury is adequately capitalized.
+All minting checks execute daily via cron. The on-chain Anchor program tracks total_minted, average_daily_burn, and total_paid_out for audit trail.
+Real-Time Network Monitoring
+Live dashboard shows:
+Treasury balance (MINT and SOL)
+Active machines in latest batch
+Total machines registered
+MINT distributed (last hour)
+Average reward per job
+Activity ratio (current)
+Reward multiplier (current)
+Burn rate (MINT/hour)
+Runway (estimated days at current burn)
+Fetched via GET /metrics endpoint. Updates every 60 seconds. Backed by Supabase queries + on-chain treasury balance checks.
+Current Status (Production v2)
 
-600 seconds work (10 min)
-Complexity 1.0
-Activity ratio 1.0 (equilibrium)
-Reward: (600 × 0.005) × 1.0 × 1.0 = 3.0 MINT
 
-Base rate: 0.005 MINT per second of work
-What is activity_ratio?
-
-Measures concurrent work across network
-0.5 (quiet) = 1.74x reward multiplier (attract work)
-1.0 (equilibrium) = 1.0x multiplier (baseline)
-2.0 (busy) = 0.76x multiplier (cool off)
-
-System self-corrects without governance.
-
-Limits & Rules
-RuleValueMinimum job duration60 secondsMaximum job duration7 daysComplexity range0.5 - 2.0Reward per job (min)0.5 MINTReward per job (max)10 MINTDaily limit per machine400 MINT / 24hActivity ratio range0.5 - 2.0
-
-Integration Examples
-LangChain Agent
-javascriptimport { FoundryClient } from './foundry-client.js';
-
-const client = new FoundryClient();
-await client.init({ type: 'agent', model: 'langchain' });
-
-// Before running agent
-const jobHash = client.generateJobHash('query_processing');
-await client.submitJob(jobHash, 1.0, { agent: 'langchain' });
-
-// Run your agent logic here
-const response = await runLangChainAgent(query);
-
-// After completion
-await client.completeJob(jobHash, 'YOUR_WALLET');
-N8N Workflow
-javascript// In N8N webhook or trigger
-const client = new FoundryClient();
-await client.init({ type: 'workflow', model: 'n8n' });
-
-const jobHash = client.generateJobHash(execution.executionId);
-await client.submitJob(jobHash, 1.2, { workflow: execution.workflowId });
-
-// After workflow completes
-await client.completeJob(jobHash, 'YOUR_WALLET');
-3D Printer (OctoPrint)
-javascript// Hook into OctoPrint event system
-import { FoundryClient } from './foundry-client.js';
-
-const client = new FoundryClient();
-await client.init({ type: 'printer', model: 'Ender 3' });
-
-// On print start
-function onPrintStart(filename) {
-  const jobHash = client.generateJobHash(filename);
-  client.submitJob(jobHash, 1.2, { file: filename });
-}
-
-// On print complete
-async function onPrintComplete(filename) {
-  const jobHash = client.generateJobHash(filename);
-  await client.completeJob(jobHash, 'YOUR_WALLET');
-}
-CNC / GRBL
-javascriptconst client = new FoundryClient();
-await client.init({ type: 'cnc', model: 'Shapeoko 3' });
-
-// On program start
-const jobHash = client.generateJobHash('program.gcode');
-await client.submitJob(jobHash, 1.8, { program: 'program.gcode' });
-
-// Listen for M2/M30 (program end)
-setTimeout(async () => {
-  await client.completeJob(jobHash, 'YOUR_WALLET');
-}, estimatedTime * 1000);
-
-API Reference
-FoundryClient(config)
-javascriptconst client = new FoundryClient({
-  apiUrl: 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts',
+Real hardware running. Prusa and MakerBot printers tested and active.
+API Endpoints
+POST /register-machine
+Register machine for the first time.
+Request: { machine_uuid, machine_pubkey_base58, metadata }
+Response: { success: true, machine_uuid }
+POST /submit-job
+Register job start. Complexity parameter: 0.5-2.0
+Request: { machine_uuid, job_hash, complexity, payload }
+Response: { success: true, job_hash, started_at }
+POST /complete-job
+Complete job and settle payment. Requires Ed25519 signature of (job_hash|recipient_wallet|timestamp).
+Request: { machine_uuid, job_hash, recipient_wallet, completion_proof }
+Response: { success: true, reward_total, reward_net, reward_fee, tx_signature, activity_ratio, activity_multiplier, decay_multiplier }
+Performs all verification, reward calculation, treasury fee deduction, and on-chain settlement atomically.
+GET /metrics
+Fetch real-time network metrics.
+Response: { network: {...}, activity: {...}, decay: {...}, treasury: {...}, recent_jobs: [...] }
+Client SDK (Node.js)
+Published on npm as foundry-client@1.0.0
+npm install foundry-client
+Initialization
+import { FoundryClient } from 'foundry-client';
+const client = new FoundryClient({
+  apiUrl: 'https://...', // Supabase edge function URL
   retryAttempts: 3,
   retryDelay: 2000,
-  debug: false
+  debug: true
 });
-client.init(metadata)
-Initialize machine. First time generates keypair, saves to .foundry_credentials.json.
-javascriptawait client.init({
-  type: 'agent',        // printer|cnc|robot|agent|custom
-  model: 'langchain',   // Your model/firmware
-  firmware: 'klipper'   // Optional
-});
-Returns:
-javascript{
-  existing: false,
-  identity: {
-    machineUuid: "uuid-here",
-    publicKey: "base58-pubkey",
-    secretKey: "base58-secret"
-  }
-}
-client.submitJob(jobHash, complexity, payload)
-Register job start.
-javascriptawait client.submitJob(jobHash, 1.2, {
-  job_type: 'print',
-  filename: 'part.gcode',
-  estimated_time: 3600
-});
-Returns:
-javascript{ success: true, job_hash: "job_..." }
-client.completeJob(jobHash, recipientWallet)
-Complete job and earn MINT.
-javascriptconst result = await client.completeJob(
-  jobHash,
-  'YOUR_SOLANA_WALLET_ADDRESS'
-);
-Returns:
-javascript{
-  success: true,
-  reward: 3.0,
-  activity_ratio: 1.05,
-  dynamic_factor: 0.95,
-  tx_signature: "5x7y...",
-  solscan: "https://solscan.io/tx/..."
-}
-client.generateJobHash(filename, additionalData)
-Create deterministic job identifier.
-javascriptconst jobHash = client.generateJobHash('part.gcode', 'run_001');
-
-Security
-Proof of Productivity (PoP)
+await client.init({ type: 'printer', model: 'Ender 3' });
+Submit and Complete a Job
+const jobHash = client.generateJobHash('my_part.gcode');
+await client.submitJob(jobHash, 1.2, { file: 'my_part.gcode' });
+// ... do work ...
+const result = await client.completeJob(jobHash, 'WALLET_ADDRESS');
+console.log(`Earned ${result.reward_net} MINT`);
+Fetch Metrics
+const metrics = await client.getMetrics();
+console.log(metrics.treasury.balance_mint, metrics.activity.activity_ratio);
+Method Reference
+init(metadata): Initialize machine. Generates keypair on first run, saves to .foundry_credentials.json.
+submitJob(jobHash, complexity, payload): Register work start.
+completeJob(jobHash, recipientWallet): Complete work and earn MINT.
+generateJobHash(filename, additionalData): Create deterministic job ID.
+getMetrics(): Fetch real-time network state.
+getMachineUuid(), getPublicKey(): Return machine identity.
+Integration Examples
+3D Printer (OctoPrint)
+// Hook into OctoPrint event system
+function onPrintStart(filename) {
+  const jobHash = client.generateJobHash(filename);
+  client.submitJob(jobHash, 1.0, { file: filename });
+} // On print complete, call completeJob()
+CNC Machine (GRBL)
+const jobHash = client.generateJobHash('program.gcode');
+await client.submitJob(jobHash, 1.8, { program: 'program.gcode' });
+// Listen for M2/M30 (program end)
+setTimeout(() => client.completeJob(jobHash, 'WALLET'), estimatedTime * 1000);
+AI Agent (LangChain / N8N)
+const jobHash = client.generateJobHash(taskId);
+await client.submitJob(jobHash, 1.0, { task: taskDescription });
+const response = await runLangChainAgent(query);
+await client.completeJob(jobHash, 'AGENT_WALLET');
+Security & Verification
+Proof of Productivity
 Every job completion requires:
-
-Unique job hash (prevents replay)
-Ed25519 signature (proves machine ownership)
-Recent timestamp (within 5 minutes)
-Minimum duration (60 seconds)
+Unique job hash (prevents replay attacks)
+Ed25519 signature (proves machine ownership of work)
+Recent timestamp (within 5 minutes of submission)
+Minimum duration (60 seconds elapsed)
 Rate limiting (400 MINT/24h per machine)
-
-Your Machine Keys
-
+Machine Credentials
 Generated locally on init()
 Stored in .foundry_credentials.json
-Back them up securely
-Never share
+Private key never leaves machine
+Backup before loss of device
+Anti-Fraud Measures
+Job hash uniqueness enforced at database level
+Signature verification on all completions
+Duration verification prevents instant gaming
+Per-machine daily cap prevents rate abuse
+System Limits
 
-Anti-Fraud
-
-Job hash uniqueness enforced
-Signature verification prevents impersonation
-Duration checks prevent instant gaming
-Rate limits prevent spam
-
-
-Troubleshooting
-"Job completion failed"
-
-Verify machine registered: client.init()
-Confirm job was submitted before completing
-Check Solana wallet address is valid
-Ensure minimum 60 seconds elapsed
-
-"Rate limit exceeded"
-
-You've earned 400 MINT in last 24 hours
-Wait for rolling window to reset
-Check dashboard for current status
-
-"Signature verification failed"
-
-Delete .foundry_credentials.json
-Run client.init() again to regenerate keys
-Verify system time is accurate
-
-"Treasury depleted"
-
-System maintenance in progress
-Jobs queued and will process when treasury refills
-Check status updates
-
-
-Getting a Wallet
-New to crypto? Get MINT in 3 steps:
-
-Install Phantom Wallet (browser extension)
-Create new Solana wallet
-Copy your wallet address
-Use it in completeJob()
-
-MINT appears instantly after job completion.
 
 Network Details
-PropertyValueBlockchainSolana MainnetTokenMINT (SPL)Token Address5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5daProgram ID28kKj6NttSczL1gC3wAP5wzXJRcasfvpaL5hdjuWHALNDEX PairMINT/USDC on RaydiumExplorerSolscan
-
-Dashboard
-Monitor your earnings and network activity:
-FoundryNet Live Monitor
-Shows:
-
-Treasury balance
-Active machines
-Total MINT distributed
-Activity ratio (real-time)
-Recent jobs with earnings
-Network health metrics
 
 
 Vision
-FoundryNet is building payment infrastructure for autonomous industry.
-Today: Machines prove work, get paid instantly.
-Tomorrow: AI agents coordinate supply chains. Manufacturing becomes programmable.
-The protocol handles identity, verification, settlement.
-Everything else—quality systems, marketplaces, reputation—gets built on top by the community.
-This is infrastructure for when autonomous systems are the economy.
-
+FoundryNet is infrastructure for the autonomous economy. The protocol is horizontal, not vertical. It doesn't pick winners or favor one machine type over another. Any device capable of HTTP calls and Ed25519 signing can register and earn.
+Today: Machines prove work, get verified on-chain, settled instantly.
+Tomorrow: AI agents coordinate supply chains. CNC machines bid on manufacturing contracts. Autonomous vehicles stake reputation and earn routes. Manufacturing becomes programmable. Work becomes liquid.
+The protocol handles identity, verification, and settlement. Everything else—quality systems, marketplaces, reputation networks, governance—gets built on top by the community.
+Pure Gilderian mechanics. Value from real work + identity + time. No capital required. No staking. No gatekeeping.
 Open Source
 All code is open-source on GitHub:
-
-Client: foundrynet/foundry-client
+Client SDK: foundrynet/foundry-client
 Protocol: foundrynet/foundry_net_MINT
-
-Fork it. Build on it. Improve it.
+Backend: foundrynet/foundrynet-edge-functions
+MIT License. Fork it. Build on it. Improve it. The more systems plug in, the more valuable the protocol becomes.
