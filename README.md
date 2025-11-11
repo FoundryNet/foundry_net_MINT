@@ -494,7 +494,7 @@ Pure Gilderian mechanics. Value from real work + identity + time. No capital req
 
 All code is open-source on GitHub:
 
-- **Client SDK:** [foundrynet/foundry-client](https://github.com/foundrynet/foundry-client)
+- **Client SDK:** [[foundrynet/foundry-client](https://github.com/foundrynet/foundry-client)](https://github.com/FoundryNet/foundry_net_MINT/blob/main/FoundryNet%20API%20Client/foundry-client.py)
 
 
 **License:** MIT. Fork it. Build on it. Improve it.
