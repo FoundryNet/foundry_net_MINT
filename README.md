@@ -129,16 +129,19 @@ Regardless of formula output, rewards are clamped:
 
 ---
 
-## Treasury Fee Structure
+## Protocol Economics
 
-Every completed job is split **2/98**:
+### Fee Structure
+- 2% → Founder perpetual wallet (protocol sustainability)
+- 2% → Community treasury (multi-sig, protocol evolution)
+- 96% → Machine/worker
 
-- **98%** → System owner's wallet
-- **2%** → Treasury (HPgJJNMHWyu3imLSSQkTV8LsvubM4Aa64n4z4Vm2dvu8)
+This aligns incentives:
+- Founder benefits from network success (2% grows with adoption)
+- Protocol self-funds independently (2% scales with usage)
+- Builders keep 96% of their work (fair vs alternatives)
 
-Both transfers execute atomically in a single Solana transaction. If either fails, the entire job settlement fails and is marked as failed in the database.
-
-Treasury accumulation funds operational costs (RPC, Supabase, API infrastructure).
+Fee rationale: AWS takes 10-30%, Stripe takes 2.9%+, OpenAI takes 20-50%. MINT takes 4% total and doesn't require token purchase or VC funding.
 
 ---
 
