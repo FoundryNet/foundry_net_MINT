@@ -173,8 +173,8 @@ class FoundryClient:
         normalized = round(complexity * 100) / 100
         
         # Validate range with tolerance
-        MIN_COMPLEXITY = 1
-        MAX_COMPLEXITY = 1
+        MIN_COMPLEXITY = .5
+        MAX_COMPLEXITY = 2
         
         if normalized < MIN_COMPLEXITY - TOLERANCE or normalized > MAX_COMPLEXITY + TOLERANCE:
             raise ValueError(f"Complexity must be {MIN_COMPLEXITY}-{MAX_COMPLEXITY}, got {normalized}")
