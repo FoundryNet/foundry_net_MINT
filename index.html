@@ -14,7 +14,7 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Courier New', monospace; background:#000; color:#0f0; padding:20px; }
     h1 { font-size:1.5rem; margin-bottom:20px; border-bottom:2px solid #0f0; padding-bottom:10px; }
-    h2 { font-size:1.2rem; margin:20px 0 10px 0; }
+    h2 { font-size:1.2rem; margin:30px 0 15px 0; border-bottom:1px solid #0f0; padding-bottom:8px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px,1fr)); gap:15px; margin-bottom:20px; }
     .metric { border:1px solid #0f0; padding:15px; background:#001100; }
     .metric.critical { border-color:#f00; background:#110000; animation:pulse 2s ease-in-out infinite; }
@@ -23,25 +23,44 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
     .metric-value{font-size:2rem;font-weight:bold;margin:10px 0;}
     .metric-label{font-size:0.9rem; opacity:0.7;}
-    table{width:100%;border-collapse:collapse;margin-top:10px;}
-    th,td{text-align:left;padding:8px;border:1px solid #0f0;font-size:0.9rem;}
-    th{background:#001100;}
+    table{width:100%;border-collapse:collapse;margin-top:15px;}
+    th,td{text-align:left;padding:10px;border:1px solid #0f0;font-size:0.9rem;}
+    th{background:#001100;font-weight:bold;}
+    tr.critical { background:#110000; }
+    tr.warning { background:#111100; }
     .timestamp{font-size:0.8rem;opacity:0.6;}
     .recent-badge{color:#0ff;font-weight:bold;font-size:0.7rem;}
     .alert-critical{border:1px solid #f00;background:#110000;padding:10px;margin:5px 0;color:#f00;}
     .alert-warning{border:1px solid #ff0;background:#111100;padding:10px;margin:5px 0;color:#ff0;}
     .alert-info{border:1px solid #0f0;background:#001100;padding:10px;margin:5px 0;color:#0f0;}
     .alert-live{border:1px solid #0ff;background:#001111;padding:10px;margin:5px 0;color:#0ff;}
-    #refresh{position:fixed;top:20px;right:20px;background:#0f0;color:#000;border:none;padding:10px 20px;cursor:pointer;font-family:inherit;font-weight:bold;}
+    #refresh{position:fixed;top:20px;right:20px;background:#0f0;color:#000;border:none;padding:10px 20px;cursor:pointer;font-family:inherit;font-weight:bold;z-index:100;}
     #refresh:hover{background:#0ff;}
-    .footer{margin-top:30px;padding-top:20px;border-top:1px solid #0f0;text-align:center;opacity:0.6;font-size:0.8rem;}
+    .footer{margin-top:40px;padding-top:20px;border-top:1px solid #0f0;text-align:center;opacity:0.6;font-size:0.8rem;}
     .loading{opacity:0.5;}
-    .new-job { background:#001111 !important; animation: flash 2s ease-in-out; }
+    .new-job { animation: flash 2s ease-in-out; }
     @keyframes flash { 0%,100%{opacity:1} 50%{opacity:0.7} }
+    button.flag-btn { background:#0f0; color:#000; border:none; padding:6px 10px; cursor:pointer; font-size:0.8rem; font-weight:bold; }
+    button.flag-btn:hover { background:#0ff; }
+    .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9998; display:flex; align-items:center; justify-content:center; }
+    .modal-content { background:#001100; border:2px solid #0f0; padding:25px; max-width:450px; width:90%; max-height:80vh; overflow-y:auto; box-shadow:0 0 20px #0f0; }
+    .modal-content h3 { color:#0f0; margin-bottom:15px; font-size:1.3rem; }
+    .modal-content p { margin-bottom:8px; color:#0f0; }
+    .modal-content label { display:block; margin-bottom:15px; color:#0f0; }
+    .modal-content select, .modal-content textarea { width:100%; padding:8px; background:#000; color:#0f0; border:1px solid #0f0; font-family:inherit; margin-top:5px; }
+    .modal-content textarea { resize:vertical; min-height:70px; }
+    .modal-content textarea:focus, .modal-content select:focus { outline:none; border-color:#0ff; }
+    .modal-buttons { display:flex; gap:10px; margin-top:20px; }
+    .modal-buttons button { flex:1; padding:10px; border:none; cursor:pointer; font-family:inherit; font-weight:bold; }
+    .modal-buttons .submit-btn { background:#0f0; color:#000; }
+    .modal-buttons .submit-btn:hover { background:#0ff; }
+    .modal-buttons .cancel-btn { background:#333; color:#0f0; border:1px solid #0f0; }
+    .modal-buttons .cancel-btn:hover { background:#555; }
+    .flags-badge { color:#f00; font-weight:bold; }
   </style>
 </head>
 <body>
-  <button id="refresh" onclick="loadData()">REFRESH</button>
+  <button id="refresh" onclick="loadData()">⟳ REFRESH</button>
   <h1>FOUNDRYNET LIVE MONITOR</h1>
 
   <div class="grid">
@@ -102,7 +121,7 @@
       <div class="metric-label">current adjustment</div>
     </div>
     <div class="metric">
-      <div class="metric-label">BURN RATE</div>
+      <div class="metric-label">EMISSIONS</div>
       <div class="metric-value" id="burnRate">--</div>
       <div class="metric-label">MINT per hour</div>
     </div>
@@ -118,32 +137,124 @@
     <div class="alert-info">Loading...</div>
   </div>
 
-  <h2>LATEST JOBS (LIVE FEED - NO TIME FILTER)</h2>
+  <h2>LATEST JOBS (LIVE SETTLEMENT)</h2>
   <table id="jobsTable">
     <thead>
       <tr>
-        <th>JOB HASH</th>
+        <th>JOB</th>
         <th>MACHINE</th>
-        <th>REWARD</th>
+        <th>COMPLEXITY</th>
         <th>DURATION</th>
-        <th>TX</th>
-        <th>COMPLETED</th>
+        <th>REWARD</th>
+        <th>FLAGS</th>
+        <th>ACTION</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="6" style="text-align:center;opacity:0.5">Loading...</td></tr>
+      <tr><td colspan="7" style="text-align:center;opacity:0.5">Loading...</td></tr>
     </tbody>
   </table>
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet: Digital Oil Protocol | Supply expands with activity, contracts with less usage | Rewards asymptotically adjust</div>
+    <div>FoundryNet: Digital Oil Protocol | Work = Payment | No gatekeeping | Community validated</div>
   </div>
 
   <script type="module">
     const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
+    const FLAG_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/flag-job';
     const MIN_BALANCE = 10;
     let lastJobHash = null;
+
+    // ────────────────────────────────────────────────────────────────
+    // FLAG MODAL FUNCTIONS
+    // ────────────────────────────────────────────────────────────────
+
+    function openFlagModal(jobHash, complexity, duration) {
+      const reasons = [
+        { label: "Complexity too high", value: "too_high" },
+        { label: "Complexity too low", value: "too_low" },
+        { label: "Suspicious pattern", value: "suspicious" },
+        { label: "Other", value: "other" }
+      ];
+      
+      const html = `
+        <div class="modal-overlay" id="flagModalOverlay" onclick="closeFlagModal(event)">
+          <div class="modal-content" onclick="event.stopPropagation()">
+            <h3>🚩 FLAG JOB</h3>
+            <p><strong>Job:</strong> ${jobHash.substring(0, 16)}...</p>
+            <p><strong>Claimed:</strong> ${complexity} complexity | ${duration}s duration</p>
+            
+            <label>
+              <strong>Why does this look wrong?</strong>
+              <select id="flagReasonSelect">
+                <option value="">-- Select a reason --</option>
+                ${reasons.map(r => `<option value="${r.value}">${r.label}</option>`).join('')}
+              </select>
+            </label>
+            
+            <label>
+              <strong>Details (optional):</strong>
+              <textarea id="flagNotesField" placeholder="Explain why you think this job is suspicious..."></textarea>
+            </label>
+            
+            <div class="modal-buttons">
+              <button class="submit-btn" onclick="submitFlag('${jobHash}')">SUBMIT FLAG</button>
+              <button class="cancel-btn" onclick="closeFlagModal()">CANCEL</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      let existing = document.getElementById('flagModalOverlay');
+      if (existing) existing.remove();
+      
+      document.body.insertAdjacentHTML('beforeend', html);
+      document.getElementById('flagReasonSelect').focus();
+    }
+
+    function closeFlagModal(event) {
+      if (event && event.target.id !== 'flagModalOverlay') return;
+      const modal = document.getElementById('flagModalOverlay');
+      if (modal) modal.remove();
+    }
+
+    async function submitFlag(jobHash) {
+      const reason = document.getElementById('flagReasonSelect').value;
+      const notes = document.getElementById('flagNotesField').value;
+      
+      if (!reason) {
+        alert('⚠️ Please select a reason');
+        return;
+      }
+      
+      const fullReason = notes ? `${reason}: ${notes}` : reason;
+      
+      try {
+        const response = await fetch(FLAG_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            job_hash: jobHash,
+            flag_reason: fullReason,
+            community_member: 'dashboard-user'
+          })
+        });
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        alert(`✅ Flagged! (${result.total_flags} total flags on this job)`);
+        closeFlagModal();
+        loadData();
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // DATA LOADING
+    // ────────────────────────────────────────────────────────────────
 
     async function getLatestJobs() {
       try {
@@ -154,12 +265,7 @@
           .order('completed_at', { ascending: false })
           .limit(50);
         
-        if (error) {
-          console.error('Supabase error:', error);
-          throw error;
-        }
-        
-        console.log(`Fetched ${jobs?.length || 0} latest jobs`);
+        if (error) throw error;
         return jobs || [];
       } catch (err) {
         console.error('Failed to fetch jobs:', err);
@@ -184,7 +290,7 @@
     async function loadData() {
       document.getElementById('refresh').classList.add('loading');
       try {
-        // Get metrics from backend
+        // Get metrics
         const metrics = await getMetrics();
         
         // Treasury data
@@ -196,7 +302,7 @@
           const sol = metrics.treasury.balance_sol ?? null;
           
           if (mint !== null && sol !== null) {
-            treasuryEl.textContent = `${mint.toFixed(2)} MINT / ${sol.toFixed(3)} SOL`;
+            treasuryEl.textContent = `${mint.toFixed(2)} / ${sol.toFixed(3)}`;
             if (mint < MIN_BALANCE) {
               treasuryMetric.classList.add('critical');
             } else if (mint < MIN_BALANCE * 2) {
@@ -205,19 +311,14 @@
               treasuryMetric.classList.remove('critical', 'warning');
             }
           } else {
-            treasuryEl.textContent = 'FETCHING...';
+            treasuryEl.textContent = 'LOADING...';
           }
 
-          // Dynamic supply metrics
+          // Dynamic metrics
           document.getElementById('activityRatio').textContent = metrics.activity?.activity_ratio?.toFixed(2) ?? '--';
           document.getElementById('rewardMultiplier').textContent = metrics.activity?.activity_multiplier?.toFixed(3) ?? '--';
-
-          // Burn rate and runway
-          const burnRate = metrics.treasury.burn_rate_per_hour ?? null;
-          const runway = metrics.treasury.runway_days ?? null;
-          
-          document.getElementById('burnRate').textContent = burnRate !== null ? burnRate.toFixed(3) : '--';
-          document.getElementById('runway').textContent = runway !== null ? runway.toFixed(1) : '--';
+          document.getElementById('burnRate').textContent = metrics.treasury.total_emissions_per_hour?.toFixed(3) ?? '--';
+          document.getElementById('runway').textContent = metrics.treasury.runway_days?.toFixed(1) ?? '--';
         } else {
           treasuryEl.textContent = 'ERROR';
           document.getElementById('activityRatio').textContent = '--';
@@ -253,14 +354,13 @@
         document.getElementById('rewardRange').textContent = `${minReward.toFixed(2)} → ${maxReward.toFixed(2)}`;
         document.getElementById('lastJobTime').textContent = minutesAgo < 60 ? minutesAgo : '60+';
 
-        // Get total machines count
+        // Get total machines
         try {
           const { count: machineCount } = await window.supabase
             .from('machines')
             .select('*', { count: 'exact', head: true });
           document.getElementById('totalMachines').textContent = machineCount || 0;
         } catch (err) {
-          console.error('Failed to get machine count:', err);
           document.getElementById('totalMachines').textContent = '?';
         }
 
@@ -269,32 +369,32 @@
         tbody.innerHTML = '';
         
         if (latestJobs.length > 0) {
-          latestJobs.slice(0, 20).forEach((job, idx) => {
+          latestJobs.slice(0, 25).forEach((job, idx) => {
             const row = tbody.insertRow();
-            if (idx === 0 && lastJobHash && job.job_hash !== lastJobHash) {
-              row.classList.add('new-job');
-            }
+            const flags = job.community_flags?.length || 0;
+            
+            if (flags >= 3) row.classList.add('critical');
+            else if (flags >= 1) row.classList.add('warning');
             
             const completedAt = new Date(job.completed_at);
             const ageMin = Math.floor((Date.now() - completedAt.getTime()) / 60000);
             const timeStr = ageMin < 60 ? `${ageMin}m ago` : completedAt.toLocaleDateString();
             
             row.innerHTML = `
-              <td>${job.job_hash.substring(0, 16)}...</td>
-              <td>${job.machine_uuid.substring(0, 10)}...</td>
-              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric || 0).toFixed(3)} MINT</td>
+              <td style="font-size:0.85rem">${job.job_hash.substring(0, 12)}...</td>
+              <td style="font-size:0.85rem">${job.machine_uuid.substring(0, 8)}...</td>
+              <td style="color:#0ff;font-weight:bold">${job.complexity_claimed}</td>
               <td>${job.duration_seconds || 0}s</td>
-              <td>${job.tx_signature ? `<a href="https://solscan.io/tx/${job.tx_signature}" target="_blank" style="color:#0ff">VIEW</a>` : '--'}</td>
-              <td class="timestamp">${timeStr}${ageMin < 5 ? ' <span class="recent-badge">🔴 LIVE</span>' : ''}</td>
+              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric || 0).toFixed(3)}</td>
+              <td class="flags-badge" style="color:${flags >= 3 ? '#f00' : flags >= 1 ? '#ff0' : '#0f0'}">${flags}</td>
+              <td>
+                <button class="flag-btn" onclick="openFlagModal('${job.job_hash}', ${job.complexity_claimed}, ${job.duration_seconds || 0})">FLAG</button>
+              </td>
             `;
           });
-          
-          if (latestJobs[0]) {
-            lastJobHash = latestJobs[0].job_hash;
-          }
         } else {
           const row = tbody.insertRow();
-          row.innerHTML = '<td colspan="6" style="text-align:center;opacity:0.5">No completed jobs found</td>';
+          row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No completed jobs found</td>';
         }
 
         // Alerts
@@ -304,26 +404,26 @@
         if (metrics && metrics.treasury) {
           const mint = metrics.treasury.balance_mint;
           if (mint !== null && mint < MIN_BALANCE) {
-            alertsDiv.innerHTML += '<div class="alert-critical">⚠️ CRITICAL: Treasury below minimum!</div>';
+            alertsDiv.innerHTML += '<div class="alert-critical">🚨 CRITICAL: Treasury below minimum balance!</div>';
           } else if (mint !== null && mint < MIN_BALANCE * 2) {
-            alertsDiv.innerHTML += '<div class="alert-warning">⚠️ WARNING: Treasury low</div>';
+            alertsDiv.innerHTML += '<div class="alert-warning">⚠️ WARNING: Treasury balance getting low</div>';
           }
         }
         
         if (minutesAgo < 5) {
-          alertsDiv.innerHTML += '<div class="alert-live">🔴 LIVE: Job completed ' + minutesAgo + ' minutes ago</div>';
+          alertsDiv.innerHTML += '<div class="alert-live">🔴 LIVE: Job settled ' + minutesAgo + ' minutes ago</div>';
         } else if (minutesAgo < 15) {
           alertsDiv.innerHTML += '<div class="alert-info">✅ ACTIVE: Recent job ' + minutesAgo + ' minutes ago</div>';
         } else if (minutesAgo < 60) {
           alertsDiv.innerHTML += '<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
         } else {
-          alertsDiv.innerHTML += '<div class="alert-warning">⚠️ No recent jobs (60+ minutes)</div>';
+          alertsDiv.innerHTML += '<div class="alert-warning">⚠️ Idle: No jobs in 60+ minutes</div>';
         }
         
-        alertsDiv.innerHTML += `<div class="alert-info">📊 ${jobsCount} jobs tracked | ${activeNodes} active machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
+        alertsDiv.innerHTML += `<div class="alert-info">📊 ${jobsCount} jobs | ${activeNodes} machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
         
         if (alertsDiv.innerHTML === '') {
-          alertsDiv.innerHTML = '<div class="alert-info">✅ All systems normal</div>';
+          alertsDiv.innerHTML = '<div class="alert-info">✅ All systems nominal</div>';
         }
 
         document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
@@ -336,6 +436,7 @@
       }
     }
 
+    // Initial load and refresh interval
     loadData();
     setInterval(loadData, 10000);
   </script>
