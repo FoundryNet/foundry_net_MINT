@@ -160,15 +160,9 @@
     <div>FoundryNet: Digital Oil Protocol | Work = Payment | No gatekeeping | Community validated</div>
   </div>
 
-  <script type="module">
-    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
+  <!-- FLAG MODAL FUNCTIONS - GLOBAL SCOPE -->
+  <script>
     const FLAG_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/flag-job';
-    const MIN_BALANCE = 10;
-    let lastJobHash = null;
-
-    // ────────────────────────────────────────────────────────────────
-    // FLAG MODAL FUNCTIONS
-    // ────────────────────────────────────────────────────────────────
 
     function openFlagModal(jobHash, complexity, duration) {
       const reasons = [
@@ -241,20 +235,27 @@
           })
         });
         
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
         
         const result = await response.json();
         alert(`✅ Flagged! (${result.total_flags} total flags on this job)`);
         closeFlagModal();
         loadData();
       } catch (err) {
+        console.error('Flag submission error:', err);
         alert(`❌ Error: ${err.message}`);
       }
     }
+  </script>
 
-    // ────────────────────────────────────────────────────────────────
-    // DATA LOADING
-    // ────────────────────────────────────────────────────────────────
+  <!-- DATA LOADING FUNCTIONS - MODULE SCOPE -->
+  <script type="module">
+    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
+    const MIN_BALANCE = 10;
+    let lastJobHash = null;
 
     async function getLatestJobs() {
       try {
@@ -287,7 +288,7 @@
       }
     }
 
-    async function loadData() {
+    window.loadData = async function() {
       document.getElementById('refresh').classList.add('loading');
       try {
         // Get metrics
@@ -434,11 +435,11 @@
       } finally { 
         document.getElementById('refresh').classList.remove('loading'); 
       }
-    }
+    };
 
     // Initial load and refresh interval
-    loadData();
-    setInterval(loadData, 10000);
+    window.loadData();
+    setInterval(window.loadData, 10000);
   </script>
 </body>
 </html>
