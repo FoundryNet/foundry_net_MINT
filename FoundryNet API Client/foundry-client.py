@@ -12,7 +12,7 @@ import os
 from uuid import uuid4
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 class FoundryClient:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -172,9 +172,10 @@ class FoundryClient:
         # Normalize complexity to 2 decimal places
         normalized = round(complexity * 100) / 100
         
-        # Validate range with tolerance
-        MIN_COMPLEXITY = .5
-        MAX_COMPLEXITY = 2
+        # Validate range
+        MIN_COMPLEXITY = 0.5
+        MAX_COMPLEXITY = 2.0
+        TOLERANCE = 0.01
         
         if normalized < MIN_COMPLEXITY - TOLERANCE or normalized > MAX_COMPLEXITY + TOLERANCE:
             raise ValueError(f"Complexity must be {MIN_COMPLEXITY}-{MAX_COMPLEXITY}, got {normalized}")
@@ -243,13 +244,65 @@ class FoundryClient:
             result = response.json()
             self.log('info', 'Job completed - MINT earned!', {
                 'job_hash': job_hash,
-                'reward': result.get('reward_net'),
+                'agent_reward': result.get('agent_reward'),
+                'treasury_fee': result.get('treasury_fee'),
+                'founder_fee': result.get('founder_fee'),
                 'tx_signature': result.get('tx_signature'),
                 'activity_ratio': result.get('activity_ratio'),
+                'complexity_claimed': result.get('complexity_claimed'),
             })
             return result
         
         return self._retry(_complete, 'Job completion')
+    
+    def get_job_details(self, job_hash: str) -> Dict:
+        """Fetch job details including flags"""
+        def _fetch():
+            response = requests.get(
+                f"{self.api_url}/jobs/{job_hash}",
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            if not response.ok:
+                raise Exception(f"Failed to fetch job: {response.text}")
+            
+            result = response.json()
+            self.log('debug', 'Job details fetched', {
+                'job_hash': job_hash,
+                'flags': len(result.get('community_flags', []))
+            })
+            return result
+        
+        return self._retry(_fetch, 'Fetch job details')
+    
+    def flag_job(self, job_hash: str, reason: str, details: Optional[str] = None, 
+                 member_name: str = 'anonymous') -> Dict:
+        """Flag a job as suspicious"""
+        full_reason = f"{reason}: {details}" if details else reason
+        
+        def _flag():
+            response = requests.post(
+                f"{self.api_url}/flag-job",
+                json={
+                    'job_hash': job_hash,
+                    'flag_reason': full_reason,
+                    'community_member': member_name
+                },
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            if not response.ok:
+                raise Exception(f"Failed to flag job: {response.text}")
+            
+            result = response.json()
+            self.log('info', 'Job flagged', {
+                'job_hash': job_hash,
+                'reason': reason,
+                'total_flags': result.get('total_flags')
+            })
+            return result
+        
+        return self._retry(_flag, 'Flag job')
     
     def generate_job_hash(self, filename: str, additional_data: str = '') -> str:
         """Generate deterministic job hash"""
@@ -282,7 +335,6 @@ class FoundryClient:
         if self.verify_key:
             return base58.b58encode(bytes(self.verify_key)).decode('utf-8')
         return ''
-
 
 // ============================================================================
 // INTEGRATION EXAMPLES
