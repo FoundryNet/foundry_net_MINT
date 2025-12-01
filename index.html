@@ -56,7 +56,8 @@
     .modal-buttons .submit-btn:hover { background:#0ff; }
     .modal-buttons .cancel-btn { background:#333; color:#0f0; border:1px solid #0f0; }
     .modal-buttons .cancel-btn:hover { background:#555; }
-    .flags-badge { color:#f00; font-weight:bold; }
+    .flag-badge { display:inline-flex; gap:4px; align-items:center; }
+    .flag-indicator { font-weight:bold; padding:2px 6px; border-radius:2px; font-size:0.85rem; }
   </style>
 </head>
 <body>
@@ -155,9 +156,51 @@
     </tbody>
   </table>
 
+  <h2>FLAG ANALYSIS (PATTERN DETECTION)</h2>
+  <table id="flagAnalysisTable">
+    <thead>
+      <tr>
+        <th>JOB</th>
+        <th>MACHINE</th>
+        <th>COMPLEXITY</th>
+        <th style="color:#f00">TOO HIGH 🔴</th>
+        <th style="color:#00f">TOO LOW 🔵</th>
+        <th style="color:#ff0">SUSPICIOUS 🟡</th>
+        <th style="color:#0ff">OTHER 🔵</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="7" style="text-align:center;opacity:0.5">Analyzing flags...</td></tr>
+    </tbody>
+  </table>
+
+  <h2>FLAG STATISTICS</h2>
+  <div class="grid">
+    <div class="metric">
+      <div class="metric-label">TOTAL FLAGGED JOBS</div>
+      <div class="metric-value" id="totalFlagged">--</div>
+      <div class="metric-label">jobs with flags</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">TOO HIGH 🔴</div>
+      <div class="metric-value" id="flagTooHigh">--</div>
+      <div class="metric-label">flags</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">TOO LOW 🔵</div>
+      <div class="metric-value" id="flagTooLow">--</div>
+      <div class="metric-label">flags</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">SUSPICIOUS 🟡</div>
+      <div class="metric-value" id="flagSuspicious">--</div>
+      <div class="metric-label">flags</div>
+    </div>
+  </div>
+
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet: Digital Oil Protocol | Work = Payment | No gatekeeping | Community validated</div>
+    <div>FoundryNet: Digital Oil Protocol | Work = Payment | No gatekeeping | Community validated complexity scoring</div>
   </div>
 
   <!-- FLAG MODAL FUNCTIONS - GLOBAL SCOPE -->
@@ -248,6 +291,38 @@
         console.error('Flag submission error:', err);
         alert(`❌ Error: ${err.message}`);
       }
+    }
+
+    function getFlagSummary(flags) {
+      if (!flags || flags.length === 0) return '<span style="color:#0f0">✓</span>';
+      
+      const flagTypes = {};
+      flags.forEach(flag => {
+        const reason = flag.reason?.split(':')[0] || 'other';
+        flagTypes[reason] = (flagTypes[reason] || 0) + 1;
+      });
+      
+      const colors = {
+        'too_high': '#f00',      // Red
+        'too_low': '#00f',       // Blue
+        'suspicious': '#ff0',    // Yellow
+        'other': '#0ff'          // Cyan
+      };
+      
+      const symbols = {
+        'too_high': '↑',
+        'too_low': '↓',
+        'suspicious': '?',
+        'other': '•'
+      };
+      
+      let html = '';
+      for (const [reason, count] of Object.entries(flagTypes)) {
+        const color = colors[reason] || '#0ff';
+        const symbol = symbols[reason] || '•';
+        html += `<span style="color:${color};font-weight:bold;margin-right:6px;background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:2px;" title="${reason}">${symbol}${count}</span>`;
+      }
+      return html;
     }
   </script>
 
@@ -387,7 +462,7 @@
               <td style="color:#0ff;font-weight:bold">${job.complexity_claimed}</td>
               <td>${job.duration_seconds || 0}s</td>
               <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric || 0).toFixed(3)}</td>
-              <td class="flags-badge" style="color:${flags >= 3 ? '#f00' : flags >= 1 ? '#ff0' : '#0f0'}">${flags}</td>
+              <td class="flag-badge">${getFlagSummary(job.community_flags)}</td>
               <td>
                 <button class="flag-btn" onclick="openFlagModal('${job.job_hash}', ${job.complexity_claimed}, ${job.duration_seconds || 0})">FLAG</button>
               </td>
@@ -397,6 +472,69 @@
           const row = tbody.insertRow();
           row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No completed jobs found</td>';
         }
+
+        // Flag analysis table
+        const flaggedJobs = latestJobs.filter(j => j.community_flags && j.community_flags.length > 0);
+        const flagAnalysisBody = document.querySelector('#flagAnalysisTable tbody');
+        flagAnalysisBody.innerHTML = '';
+        
+        if (flaggedJobs.length > 0) {
+          flaggedJobs.slice(0, 15).forEach(job => {
+            const flags = job.community_flags || [];
+            const flagTypes = {
+              'too_high': 0,
+              'too_low': 0,
+              'suspicious': 0,
+              'other': 0
+            };
+            
+            flags.forEach(flag => {
+              const reason = flag.reason?.split(':')[0] || 'other';
+              if (flagTypes.hasOwnProperty(reason)) {
+                flagTypes[reason]++;
+              }
+            });
+            
+            const row = flagAnalysisBody.insertRow();
+            row.innerHTML = `
+              <td style="font-size:0.85rem">${job.job_hash.substring(0, 12)}...</td>
+              <td style="font-size:0.85rem">${job.machine_uuid.substring(0, 8)}...</td>
+              <td style="color:#0ff;font-weight:bold">${job.complexity_claimed}</td>
+              <td style="color:#f00;text-align:center;font-weight:bold;background:rgba(255,0,0,0.1)">${flagTypes['too_high']}</td>
+              <td style="color:#00f;text-align:center;font-weight:bold;background:rgba(0,0,255,0.1)">${flagTypes['too_low']}</td>
+              <td style="color:#ff0;text-align:center;font-weight:bold;background:rgba(255,255,0,0.1)">${flagTypes['suspicious']}</td>
+              <td style="color:#0ff;text-align:center;font-weight:bold;background:rgba(0,255,255,0.1)">${flagTypes['other']}</td>
+            `;
+          });
+        } else {
+          const row = flagAnalysisBody.insertRow();
+          row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No flagged jobs yet - community validation in progress</td>';
+        }
+
+        // Flag statistics
+        let totalFlags = 0;
+        let flagStats = {
+          'too_high': 0,
+          'too_low': 0,
+          'suspicious': 0,
+          'other': 0
+        };
+        
+        latestJobs.forEach(job => {
+          const flags = job.community_flags || [];
+          totalFlags += flags.length;
+          flags.forEach(flag => {
+            const reason = flag.reason?.split(':')[0] || 'other';
+            if (flagStats.hasOwnProperty(reason)) {
+              flagStats[reason]++;
+            }
+          });
+        });
+        
+        document.getElementById('totalFlagged').textContent = flaggedJobs.length;
+        document.getElementById('flagTooHigh').textContent = flagStats['too_high'];
+        document.getElementById('flagTooLow').textContent = flagStats['too_low'];
+        document.getElementById('flagSuspicious').textContent = flagStats['suspicious'];
 
         // Alerts
         const alertsDiv = document.getElementById('alerts');
@@ -419,6 +557,10 @@
           alertsDiv.innerHTML += '<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
         } else {
           alertsDiv.innerHTML += '<div class="alert-warning">⚠️ Idle: No jobs in 60+ minutes</div>';
+        }
+        
+        if (flaggedJobs.length > 0) {
+          alertsDiv.innerHTML += `<div class="alert-info">🚩 ${flaggedJobs.length} jobs flagged | ${totalFlags} total flags (↑${flagStats['too_high']} ↓${flagStats['too_low']} ?${flagStats['suspicious']})</div>`;
         }
         
         alertsDiv.innerHTML += `<div class="alert-info">📊 ${jobsCount} jobs | ${activeNodes} machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
