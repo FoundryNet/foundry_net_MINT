@@ -2,586 +2,251 @@
 <html>
 <head>
   <title>FoundryNet Monitor</title>
-  <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
-    window.supabase = createClient(
-      'https://lsijwmklicmqtuqxhgnu.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzaWp3bWtsaWNtcXR1cXhoZ251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5MTY3ODQsImV4cCI6MjA3MjQ5Mjc4NH0.0J560GHHrIaRYlwEYgYBIsWuiRgZFiITXKvc8rXvP0Y'
-    );
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Courier New', monospace; background:#000; color:#0f0; padding:20px; }
     h1 { font-size:1.5rem; margin-bottom:20px; border-bottom:2px solid #0f0; padding-bottom:10px; }
     h2 { font-size:1.2rem; margin:30px 0 15px 0; border-bottom:1px solid #0f0; padding-bottom:8px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px,1fr)); gap:15px; margin-bottom:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:15px; margin-bottom:20px; }
     .metric { border:1px solid #0f0; padding:15px; background:#001100; }
-    .metric.critical { border-color:#f00; background:#110000; animation:pulse 2s ease-in-out infinite; }
-    .metric.warning { border-color:#ff0; background:#111100; }
-    .metric.live { border-color:#0ff; background:#001111; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
-    .metric-value{font-size:2rem;font-weight:bold;margin:10px 0;}
-    .metric-label{font-size:0.9rem; opacity:0.7;}
-    table{width:100%;border-collapse:collapse;margin-top:15px;}
-    th,td{text-align:left;padding:10px;border:1px solid #0f0;font-size:0.9rem;}
-    th{background:#001100;font-weight:bold;}
-    tr.critical { background:#110000; }
+    .metric.ml { border-color:#f0f; background:#110011; }
+    .metric-value { font-size:2rem; font-weight:bold; margin:10px 0; }
+    .metric-label { font-size:0.9rem; opacity:0.7; }
+    table { width:100%; border-collapse:collapse; margin-top:15px; }
+    th,td { text-align:left; padding:10px; border:1px solid #0f0; font-size:0.9rem; }
+    th { background:#001100; }
+    tr.flagged { background:#220011; }
     tr.warning { background:#111100; }
-    .timestamp{font-size:0.8rem;opacity:0.6;}
-    .recent-badge{color:#0ff;font-weight:bold;font-size:0.7rem;}
-    .alert-critical{border:1px solid #f00;background:#110000;padding:10px;margin:5px 0;color:#f00;}
-    .alert-warning{border:1px solid #ff0;background:#111100;padding:10px;margin:5px 0;color:#ff0;}
-    .alert-info{border:1px solid #0f0;background:#001100;padding:10px;margin:5px 0;color:#0f0;}
-    .alert-live{border:1px solid #0ff;background:#001111;padding:10px;margin:5px 0;color:#0ff;}
-    #refresh{position:fixed;top:20px;right:20px;background:#0f0;color:#000;border:none;padding:10px 20px;cursor:pointer;font-family:inherit;font-weight:bold;z-index:100;}
-    #refresh:hover{background:#0ff;}
-    .footer{margin-top:40px;padding-top:20px;border-top:1px solid #0f0;text-align:center;opacity:0.6;font-size:0.8rem;}
-    .loading{opacity:0.5;}
-    .new-job { animation: flash 2s ease-in-out; }
-    @keyframes flash { 0%,100%{opacity:1} 50%{opacity:0.7} }
-    button.flag-btn { background:#0f0; color:#000; border:none; padding:6px 10px; cursor:pointer; font-size:0.8rem; font-weight:bold; }
-    button.flag-btn:hover { background:#0ff; }
-    .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9998; display:flex; align-items:center; justify-content:center; }
-    .modal-content { background:#001100; border:2px solid #0f0; padding:25px; max-width:450px; width:90%; max-height:80vh; overflow-y:auto; box-shadow:0 0 20px #0f0; }
-    .modal-content h3 { color:#0f0; margin-bottom:15px; font-size:1.3rem; }
-    .modal-content p { margin-bottom:8px; color:#0f0; }
-    .modal-content label { display:block; margin-bottom:15px; color:#0f0; }
-    .modal-content select, .modal-content textarea { width:100%; padding:8px; background:#000; color:#0f0; border:1px solid #0f0; font-family:inherit; margin-top:5px; }
-    .modal-content textarea { resize:vertical; min-height:70px; }
-    .modal-content textarea:focus, .modal-content select:focus { outline:none; border-color:#0ff; }
-    .modal-buttons { display:flex; gap:10px; margin-top:20px; }
-    .modal-buttons button { flex:1; padding:10px; border:none; cursor:pointer; font-family:inherit; font-weight:bold; }
-    .modal-buttons .submit-btn { background:#0f0; color:#000; }
-    .modal-buttons .submit-btn:hover { background:#0ff; }
-    .modal-buttons .cancel-btn { background:#333; color:#0f0; border:1px solid #0f0; }
-    .modal-buttons .cancel-btn:hover { background:#555; }
-    .flag-badge { display:inline-flex; gap:4px; align-items:center; }
-    .flag-indicator { font-weight:bold; padding:2px 6px; border-radius:2px; font-size:0.85rem; }
+    .alert-ml { border:1px solid #f0f; background:#110011; padding:10px; margin:5px 0; color:#f0f; }
+    .alert-info { border:1px solid #0f0; background:#001100; padding:10px; margin:5px 0; color:#0f0; }
+    #refresh { position:fixed; top:20px; right:20px; background:#0f0; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
+    #refresh:hover { background:#0ff; }
+    #exportBtn { position:fixed; top:20px; right:140px; background:#f0f; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
+    #exportBtn:hover { background:#0ff; }
+    .footer { margin-top:40px; padding-top:20px; border-top:1px solid #0f0; text-align:center; opacity:0.6; font-size:0.8rem; }
+    .confidence-bar { height:8px; background:#001100; border:1px solid #0f0; margin-top:4px; }
+    .confidence-fill { height:100%; }
+    .confidence-fill.clean { background:#0f0; }
+    .confidence-fill.neutral { background:#ff0; }
+    .confidence-fill.flagged { background:#f00; }
+    .trust-delta { font-weight:bold; }
+    .trust-delta.positive { color:#0f0; }
+    .trust-delta.negative { color:#f00; }
+    .dispute-btn { background:#333; color:#f0f; border:1px solid #f0f; padding:4px 8px; cursor:pointer; font-size:0.75rem; }
+    .dispute-btn:hover { background:#f0f; color:#000; }
+    .dispute-btn.disputed { background:#f0f; color:#000; cursor:default; }
   </style>
 </head>
 <body>
   <button id="refresh" onclick="loadData()">⟳ REFRESH</button>
-  <h1>FOUNDRYNET LIVE MONITOR</h1>
+  <button id="exportBtn" onclick="exportData()">📥 EXPORT CSV</button>
+  
+  <h1>FOUNDRYNET MONITOR</h1>
 
+  <h2 style="border-color:#f0f;color:#f0f;">🧠 ML IMMUNE SYSTEM</h2>
   <div class="grid">
-    <div class="metric" id="treasuryMetric">
-      <div class="metric-label">TREASURY BALANCE</div>
-      <div class="metric-value" id="treasury">--</div>
-      <div class="metric-label">MINT / SOL</div>
+    <div class="metric ml">
+      <div class="metric-label">STATUS</div>
+      <div class="metric-value" id="mlStatus">--</div>
     </div>
-    <div class="metric live">
-      <div class="metric-label">LATEST JOBS</div>
-      <div class="metric-value" id="latestCount">--</div>
-      <div class="metric-label">last 50 completed</div>
+    <div class="metric ml">
+      <div class="metric-label">JOBS SCORED</div>
+      <div class="metric-value" id="mlJobsScored">--</div>
     </div>
-    <div class="metric live">
-      <div class="metric-label">ACTIVE MACHINES</div>
-      <div class="metric-value" id="machines">--</div>
-      <div class="metric-label">in latest batch</div>
+    <div class="metric ml">
+      <div class="metric-label">MACHINES</div>
+      <div class="metric-value" id="mlMachines">--</div>
     </div>
-    <div class="metric live">
-      <div class="metric-label">MINT DISTRIBUTED</div>
-      <div class="metric-value" id="mintDist">--</div>
-      <div class="metric-label">latest jobs</div>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="metric">
-      <div class="metric-label">AVG REWARD</div>
-      <div class="metric-value" id="avgReward">--</div>
-      <div class="metric-label">MINT per job</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">REWARD RANGE</div>
-      <div class="metric-value" id="rewardRange">--</div>
-      <div class="metric-label">min → max</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">TOTAL MACHINES</div>
-      <div class="metric-value" id="totalMachines">--</div>
-      <div class="metric-label">all time registered</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">LAST JOB</div>
-      <div class="metric-value" id="lastJobTime">--</div>
-      <div class="metric-label">minutes ago</div>
+    <div class="metric ml">
+      <div class="metric-label">DISPUTES</div>
+      <div class="metric-value" id="mlDisputes">--</div>
     </div>
   </div>
 
   <div class="grid">
-    <div class="metric">
-      <div class="metric-label">ACTIVITY RATIO</div>
-      <div class="metric-value" id="activityRatio">--</div>
-      <div class="metric-label">dynamic supply</div>
+    <div class="metric ml">
+      <div class="metric-label">🔴 FLAG STRONG</div>
+      <div class="metric-value" id="mlFlagStrong">--</div>
     </div>
-    <div class="metric">
-      <div class="metric-label">REWARD MULTIPLIER</div>
-      <div class="metric-value" id="rewardMultiplier">--</div>
-      <div class="metric-label">current adjustment</div>
+    <div class="metric ml">
+      <div class="metric-label">🟡 FLAG SOFT</div>
+      <div class="metric-value" id="mlFlagSoft">--</div>
     </div>
-    <div class="metric">
-      <div class="metric-label">EMISSIONS</div>
-      <div class="metric-value" id="burnRate">--</div>
-      <div class="metric-label">MINT per hour</div>
+    <div class="metric ml">
+      <div class="metric-label">✅ CLEAN</div>
+      <div class="metric-value" id="mlClean">--</div>
     </div>
-    <div class="metric">
-      <div class="metric-label">RUNWAY</div>
-      <div class="metric-value" id="runway">--</div>
-      <div class="metric-label">days remaining</div>
+    <div class="metric ml">
+      <div class="metric-label">AVG COMPLEXITY</div>
+      <div class="metric-value" id="mlNetworkComplexity">--</div>
     </div>
   </div>
 
-  <h2>NETWORK STATUS</h2>
-  <div id="alerts">
-    <div class="alert-info">Loading...</div>
-  </div>
+  <div id="alerts"></div>
 
-  <h2>LATEST JOBS (LIVE SETTLEMENT)</h2>
-  <table id="jobsTable">
+  <h2 style="border-color:#f0f;color:#f0f;">RECENT ML SCORES</h2>
+  <table id="mlScoresTable">
     <thead>
       <tr>
-        <th>JOB</th>
+        <th>TIME</th>
         <th>MACHINE</th>
-        <th>COMPLEXITY</th>
-        <th>DURATION</th>
-        <th>REWARD</th>
-        <th>FLAGS</th>
+        <th>DUR</th>
+        <th>CMPLX</th>
+        <th>CONFIDENCE</th>
         <th>ACTION</th>
+        <th>TRUST</th>
+        <th>CHAIN</th>
+        <th>DISPUTE</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="7" style="text-align:center;opacity:0.5">Loading...</td></tr>
+      <tr><td colspan="9" style="text-align:center;opacity:0.5">Loading...</td></tr>
     </tbody>
   </table>
-
-  <h2>FLAG ANALYSIS (PATTERN DETECTION)</h2>
-  <table id="flagAnalysisTable">
-    <thead>
-      <tr>
-        <th>JOB</th>
-        <th>MACHINE</th>
-        <th>COMPLEXITY</th>
-        <th style="color:#f00">TOO HIGH 🔴</th>
-        <th style="color:#00f">TOO LOW 🔵</th>
-        <th style="color:#ff0">SUSPICIOUS 🟡</th>
-        <th style="color:#0ff">OTHER 🔵</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr><td colspan="7" style="text-align:center;opacity:0.5">Analyzing flags...</td></tr>
-    </tbody>
-  </table>
-
-  <h2>FLAG STATISTICS</h2>
-  <div class="grid">
-    <div class="metric">
-      <div class="metric-label">TOTAL FLAGGED JOBS</div>
-      <div class="metric-value" id="totalFlagged">--</div>
-      <div class="metric-label">jobs with flags</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">TOO HIGH 🔴</div>
-      <div class="metric-value" id="flagTooHigh">--</div>
-      <div class="metric-label">flags</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">TOO LOW 🔵</div>
-      <div class="metric-value" id="flagTooLow">--</div>
-      <div class="metric-label">flags</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">SUSPICIOUS 🟡</div>
-      <div class="metric-value" id="flagSuspicious">--</div>
-      <div class="metric-label">flags</div>
-    </div>
-  </div>
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet: Digital Oil Protocol | Work = Payment | No gatekeeping | Community validated complexity scoring</div>
+    <div>FoundryNet | ML-Powered Economic Immune System | Devnet</div>
   </div>
 
-  <!-- FLAG MODAL FUNCTIONS - GLOBAL SCOPE -->
   <script>
-    const FLAG_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/flag-job';
+    const ML_ENDPOINT = 'https://web-production-4ab01.up.railway.app';
+    let disputedJobs = new Set();
 
-    function openFlagModal(jobHash, complexity, duration) {
-      const reasons = [
-        { label: "Complexity too high", value: "too_high" },
-        { label: "Complexity too low", value: "too_low" },
-        { label: "Suspicious pattern", value: "suspicious" },
-        { label: "Other", value: "other" }
-      ];
-      
-      const html = `
-        <div class="modal-overlay" id="flagModalOverlay" onclick="closeFlagModal(event)">
-          <div class="modal-content" onclick="event.stopPropagation()">
-            <h3>🚩 FLAG JOB</h3>
-            <p><strong>Job:</strong> ${jobHash.substring(0, 16)}...</p>
-            <p><strong>Claimed:</strong> ${complexity} complexity | ${duration}s duration</p>
-            
-            <label>
-              <strong>Why does this look wrong?</strong>
-              <select id="flagReasonSelect">
-                <option value="">-- Select a reason --</option>
-                ${reasons.map(r => `<option value="${r.value}">${r.label}</option>`).join('')}
-              </select>
-            </label>
-            
-            <label>
-              <strong>Details (optional):</strong>
-              <textarea id="flagNotesField" placeholder="Explain why you think this job is suspicious..."></textarea>
-            </label>
-            
-            <div class="modal-buttons">
-              <button class="submit-btn" onclick="submitFlag('${jobHash}')">SUBMIT FLAG</button>
-              <button class="cancel-btn" onclick="closeFlagModal()">CANCEL</button>
-            </div>
-          </div>
-        </div>
-      `;
-      
-      let existing = document.getElementById('flagModalOverlay');
-      if (existing) existing.remove();
-      
-      document.body.insertAdjacentHTML('beforeend', html);
-      document.getElementById('flagReasonSelect').focus();
-    }
-
-    function closeFlagModal(event) {
-      if (event && event.target.id !== 'flagModalOverlay') return;
-      const modal = document.getElementById('flagModalOverlay');
-      if (modal) modal.remove();
-    }
-
-    async function submitFlag(jobHash) {
-      const reason = document.getElementById('flagReasonSelect').value;
-      const notes = document.getElementById('flagNotesField').value;
-      
-      if (!reason) {
-        alert('⚠️ Please select a reason');
-        return;
-      }
-      
-      const fullReason = notes ? `${reason}: ${notes}` : reason;
+    async function loadData() {
+      document.getElementById('refresh').style.opacity = '0.5';
       
       try {
-        const response = await fetch(FLAG_ENDPOINT, {
+        const [health, stats, scores] = await Promise.all([
+          fetch(`${ML_ENDPOINT}/health`).then(r => r.json()).catch(() => null),
+          fetch(`${ML_ENDPOINT}/stats`).then(r => r.json()).catch(() => null),
+          fetch(`${ML_ENDPOINT}/recent-scores`).then(r => r.json()).catch(() => null)
+        ]);
+
+        // Health
+        if (health) {
+          document.getElementById('mlStatus').textContent = health.status === 'healthy' ? 'ACTIVE' : 'OFFLINE';
+          document.getElementById('mlStatus').style.color = health.status === 'healthy' ? '#0f0' : '#f00';
+          document.getElementById('mlJobsScored').textContent = health.jobs || 0;
+          document.getElementById('mlMachines').textContent = health.machines || 0;
+          document.getElementById('mlDisputes').textContent = health.disputes || 0;
+        }
+
+        // Stats
+        if (stats) {
+          document.getElementById('mlNetworkComplexity').textContent = stats.network_avg_complexity?.toFixed(2) || '--';
+        }
+
+        // Scores
+        if (scores && scores.jobs) {
+          const jobs = scores.jobs;
+          let flagStrong = 0, flagSoft = 0, clean = 0;
+
+          jobs.forEach(job => {
+            if (job.action === 'flag_strong') flagStrong++;
+            else if (job.action === 'flag_soft') flagSoft++;
+            else if (job.action === 'clean') clean++;
+          });
+
+          document.getElementById('mlFlagStrong').textContent = flagStrong;
+          document.getElementById('mlFlagSoft').textContent = flagSoft;
+          document.getElementById('mlClean').textContent = clean;
+
+          // Alerts
+          const alertsDiv = document.getElementById('alerts');
+          alertsDiv.innerHTML = `<div class="alert-ml">🧠 ${jobs.length} scored | ${flagStrong} strong flags | ${flagSoft} soft | ${clean} clean</div>`;
+
+          // Table
+          const tbody = document.querySelector('#mlScoresTable tbody');
+          tbody.innerHTML = '';
+
+          jobs.slice().reverse().slice(0, 30).forEach(job => {
+            const row = tbody.insertRow();
+            const conf = (job.confidence * 100).toFixed(1);
+            
+            if (job.action === 'flag_strong') row.classList.add('flagged');
+            else if (job.action === 'flag_soft') row.classList.add('warning');
+
+            const confClass = job.confidence > 0.7 ? 'flagged' : job.confidence > 0.5 ? 'neutral' : 'clean';
+            const trustClass = job.trust_delta > 0 ? 'positive' : job.trust_delta < 0 ? 'negative' : '';
+            const trustSign = job.trust_delta > 0 ? '+' : '';
+            
+            const chainStatus = job.trust_update?.status === 'sent' ? '✓' : job.trust_update?.status === 'error' ? '✗' : '⏳';
+            const chainColor = job.trust_update?.status === 'sent' ? '#0f0' : job.trust_update?.status === 'error' ? '#f00' : '#ff0';
+            
+            const jobHash = job.job_hash || '';
+            const isDisputed = disputedJobs.has(jobHash);
+            const disputeBtn = isDisputed 
+              ? `<button class="dispute-btn disputed">DISPUTED</button>`
+              : `<button class="dispute-btn" onclick="openDispute('${jobHash}', '${job.action}')">DISPUTE</button>`;
+
+            row.innerHTML = `
+              <td style="font-size:0.75rem">${job.timestamp?.substring(11, 19) || '--'}</td>
+              <td style="font-size:0.75rem">${job.machine_id?.substring(0, 6) || '--'}...</td>
+              <td>${job.duration_seconds || '--'}s</td>
+              <td style="color:#0ff">${job.complexity_claimed?.toFixed(2) || '--'}</td>
+              <td>
+                <span style="color:${confClass === 'flagged' ? '#f00' : confClass === 'neutral' ? '#ff0' : '#0f0'}">${conf}%</span>
+                <div class="confidence-bar"><div class="confidence-fill ${confClass}" style="width:${conf}%"></div></div>
+              </td>
+              <td style="color:${job.action === 'flag_strong' ? '#f00' : job.action === 'flag_soft' ? '#ff0' : '#0f0'}">${job.action || '--'}</td>
+              <td><span class="trust-delta ${trustClass}">${trustSign}${job.trust_delta || 0}</span></td>
+              <td style="color:${chainColor}">${chainStatus}</td>
+              <td>${disputeBtn}</td>
+            `;
+          });
+        }
+
+        document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+      } catch (err) {
+        console.error('Load error:', err);
+      }
+      
+      document.getElementById('refresh').style.opacity = '1';
+    }
+
+    function openDispute(jobHash, currentAction) {
+      const type = currentAction.includes('flag') 
+        ? 'false_positive' 
+        : 'false_negative';
+      
+      const reason = prompt(`Dispute this ${currentAction} decision?\n\nType: ${type}\nReason (optional):`);
+      
+      if (reason !== null) {
+        submitDispute(jobHash, type, reason);
+      }
+    }
+
+    async function submitDispute(jobHash, type, reason) {
+      try {
+        const response = await fetch(`${ML_ENDPOINT}/dispute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             job_hash: jobHash,
-            flag_reason: fullReason,
-            community_member: 'dashboard-user'
+            dispute_type: type,
+            reason: reason || ''
           })
         });
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        if (response.ok) {
+          disputedJobs.add(jobHash);
+          alert('✅ Dispute recorded for retraining');
+          loadData();
+        } else {
+          alert('❌ Failed to submit dispute');
         }
-        
-        const result = await response.json();
-        alert(`✅ Flagged! (${result.total_flags} total flags on this job)`);
-        closeFlagModal();
-        loadData();
       } catch (err) {
-        console.error('Flag submission error:', err);
-        alert(`❌ Error: ${err.message}`);
+        alert('❌ Error: ' + err.message);
       }
     }
 
-    function getFlagSummary(flags) {
-      if (!flags || flags.length === 0) return '<span style="color:#0f0">✓</span>';
-      
-      const flagTypes = {};
-      flags.forEach(flag => {
-        const reason = flag.reason?.split(':')[0] || 'other';
-        flagTypes[reason] = (flagTypes[reason] || 0) + 1;
-      });
-      
-      const colors = {
-        'too_high': '#f00',      // Red
-        'too_low': '#00f',       // Blue
-        'suspicious': '#ff0',    // Yellow
-        'other': '#0ff'          // Cyan
-      };
-      
-      const symbols = {
-        'too_high': '↑',
-        'too_low': '↓',
-        'suspicious': '?',
-        'other': '•'
-      };
-      
-      let html = '';
-      for (const [reason, count] of Object.entries(flagTypes)) {
-        const color = colors[reason] || '#0ff';
-        const symbol = symbols[reason] || '•';
-        html += `<span style="color:${color};font-weight:bold;margin-right:6px;background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:2px;" title="${reason}">${symbol}${count}</span>`;
-      }
-      return html;
-    }
-  </script>
-
-  <!-- DATA LOADING FUNCTIONS - MODULE SCOPE -->
-  <script type="module">
-    const METRICS_ENDPOINT = 'https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts/metrics';
-    const MIN_BALANCE = 10;
-    let lastJobHash = null;
-
-    async function getLatestJobs() {
-      try {
-        const { data: jobs, error } = await window.supabase
-          .from('jobs')
-          .select('*')
-          .eq('status', 'completed')
-          .order('completed_at', { ascending: false })
-          .limit(50);
-        
-        if (error) throw error;
-        return jobs || [];
-      } catch (err) {
-        console.error('Failed to fetch jobs:', err);
-        return [];
-      }
+    function exportData() {
+      window.open(`${ML_ENDPOINT}/export-training-data`, '_blank');
     }
 
-    async function getMetrics() {
-      try {
-        const response = await fetch(METRICS_ENDPOINT, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-      } catch (err) {
-        console.error('Failed to fetch metrics:', err);
-        return null;
-      }
-    }
-
-    window.loadData = async function() {
-      document.getElementById('refresh').classList.add('loading');
-      try {
-        // Get metrics
-        const metrics = await getMetrics();
-        
-        // Treasury data
-        const treasuryEl = document.getElementById('treasury');
-        const treasuryMetric = document.getElementById('treasuryMetric');
-
-        if (metrics && metrics.treasury) {
-          const mint = metrics.treasury.balance_mint ?? null;
-          const sol = metrics.treasury.balance_sol ?? null;
-          
-          if (mint !== null && sol !== null) {
-            treasuryEl.textContent = `${mint.toFixed(2)} / ${sol.toFixed(3)}`;
-            if (mint < MIN_BALANCE) {
-              treasuryMetric.classList.add('critical');
-            } else if (mint < MIN_BALANCE * 2) {
-              treasuryMetric.classList.add('warning');
-            } else {
-              treasuryMetric.classList.remove('critical', 'warning');
-            }
-          } else {
-            treasuryEl.textContent = 'LOADING...';
-          }
-
-          // Dynamic metrics
-          document.getElementById('activityRatio').textContent = metrics.activity?.activity_ratio?.toFixed(2) ?? '--';
-          document.getElementById('rewardMultiplier').textContent = metrics.activity?.activity_multiplier?.toFixed(3) ?? '--';
-          document.getElementById('burnRate').textContent = metrics.treasury.total_emissions_per_hour?.toFixed(3) ?? '--';
-          document.getElementById('runway').textContent = metrics.treasury.runway_days?.toFixed(1) ?? '--';
-        } else {
-          treasuryEl.textContent = 'ERROR';
-          document.getElementById('activityRatio').textContent = '--';
-          document.getElementById('rewardMultiplier').textContent = '--';
-          document.getElementById('burnRate').textContent = '--';
-          document.getElementById('runway').textContent = '--';
-        }
-
-        // Get latest jobs
-        const latestJobs = await getLatestJobs();
-        
-        // Calculate metrics
-        const jobsCount = latestJobs.length;
-        const activeNodes = new Set(latestJobs.map(j => j.machine_uuid)).size;
-        const totalMint = latestJobs.reduce((sum, j) => sum + Number(j.reward_amount_numeric || 0), 0);
-        const avgReward = jobsCount > 0 ? totalMint / jobsCount : 0;
-        
-        const rewards = latestJobs.map(j => Number(j.reward_amount_numeric || 0)).filter(r => r > 0);
-        const minReward = rewards.length > 0 ? Math.min(...rewards) : 0;
-        const maxReward = rewards.length > 0 ? Math.max(...rewards) : 0;
-        
-        // Time since last job
-        const lastJobTimestamp = latestJobs[0]?.completed_at;
-        const minutesAgo = lastJobTimestamp 
-          ? Math.floor((Date.now() - new Date(lastJobTimestamp).getTime()) / 60000)
-          : 999;
-        
-        // Update metrics
-        document.getElementById('latestCount').textContent = jobsCount;
-        document.getElementById('machines').textContent = activeNodes;
-        document.getElementById('mintDist').textContent = totalMint.toFixed(2);
-        document.getElementById('avgReward').textContent = avgReward.toFixed(3);
-        document.getElementById('rewardRange').textContent = `${minReward.toFixed(2)} → ${maxReward.toFixed(2)}`;
-        document.getElementById('lastJobTime').textContent = minutesAgo < 60 ? minutesAgo : '60+';
-
-        // Get total machines
-        try {
-          const { count: machineCount } = await window.supabase
-            .from('machines')
-            .select('*', { count: 'exact', head: true });
-          document.getElementById('totalMachines').textContent = machineCount || 0;
-        } catch (err) {
-          document.getElementById('totalMachines').textContent = '?';
-        }
-
-        // Update jobs table
-        const tbody = document.querySelector('#jobsTable tbody');
-        tbody.innerHTML = '';
-        
-        if (latestJobs.length > 0) {
-          latestJobs.slice(0, 25).forEach((job, idx) => {
-            const row = tbody.insertRow();
-            const flags = job.community_flags?.length || 0;
-            
-            if (flags >= 3) row.classList.add('critical');
-            else if (flags >= 1) row.classList.add('warning');
-            
-            const completedAt = new Date(job.completed_at);
-            const ageMin = Math.floor((Date.now() - completedAt.getTime()) / 60000);
-            const timeStr = ageMin < 60 ? `${ageMin}m ago` : completedAt.toLocaleDateString();
-            
-            row.innerHTML = `
-              <td style="font-size:0.85rem">${job.job_hash.substring(0, 12)}...</td>
-              <td style="font-size:0.85rem">${job.machine_uuid.substring(0, 8)}...</td>
-              <td style="color:#0ff;font-weight:bold">${job.complexity_claimed}</td>
-              <td>${job.duration_seconds || 0}s</td>
-              <td style="color:#0ff;font-weight:bold">${(job.reward_amount_numeric || 0).toFixed(3)}</td>
-              <td class="flag-badge">${getFlagSummary(job.community_flags)}</td>
-              <td>
-                <button class="flag-btn" onclick="openFlagModal('${job.job_hash}', ${job.complexity_claimed}, ${job.duration_seconds || 0})">FLAG</button>
-              </td>
-            `;
-          });
-        } else {
-          const row = tbody.insertRow();
-          row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No completed jobs found</td>';
-        }
-
-        // Flag analysis table
-        const flaggedJobs = latestJobs.filter(j => j.community_flags && j.community_flags.length > 0);
-        const flagAnalysisBody = document.querySelector('#flagAnalysisTable tbody');
-        flagAnalysisBody.innerHTML = '';
-        
-        if (flaggedJobs.length > 0) {
-          flaggedJobs.slice(0, 15).forEach(job => {
-            const flags = job.community_flags || [];
-            const flagTypes = {
-              'too_high': 0,
-              'too_low': 0,
-              'suspicious': 0,
-              'other': 0
-            };
-            
-            flags.forEach(flag => {
-              const reason = flag.reason?.split(':')[0] || 'other';
-              if (flagTypes.hasOwnProperty(reason)) {
-                flagTypes[reason]++;
-              }
-            });
-            
-            const row = flagAnalysisBody.insertRow();
-            row.innerHTML = `
-              <td style="font-size:0.85rem">${job.job_hash.substring(0, 12)}...</td>
-              <td style="font-size:0.85rem">${job.machine_uuid.substring(0, 8)}...</td>
-              <td style="color:#0ff;font-weight:bold">${job.complexity_claimed}</td>
-              <td style="color:#f00;text-align:center;font-weight:bold;background:rgba(255,0,0,0.1)">${flagTypes['too_high']}</td>
-              <td style="color:#00f;text-align:center;font-weight:bold;background:rgba(0,0,255,0.1)">${flagTypes['too_low']}</td>
-              <td style="color:#ff0;text-align:center;font-weight:bold;background:rgba(255,255,0,0.1)">${flagTypes['suspicious']}</td>
-              <td style="color:#0ff;text-align:center;font-weight:bold;background:rgba(0,255,255,0.1)">${flagTypes['other']}</td>
-            `;
-          });
-        } else {
-          const row = flagAnalysisBody.insertRow();
-          row.innerHTML = '<td colspan="7" style="text-align:center;opacity:0.5">No flagged jobs yet - community validation in progress</td>';
-        }
-
-        // Flag statistics
-        let totalFlags = 0;
-        let flagStats = {
-          'too_high': 0,
-          'too_low': 0,
-          'suspicious': 0,
-          'other': 0
-        };
-        
-        latestJobs.forEach(job => {
-          const flags = job.community_flags || [];
-          totalFlags += flags.length;
-          flags.forEach(flag => {
-            const reason = flag.reason?.split(':')[0] || 'other';
-            if (flagStats.hasOwnProperty(reason)) {
-              flagStats[reason]++;
-            }
-          });
-        });
-        
-        document.getElementById('totalFlagged').textContent = flaggedJobs.length;
-        document.getElementById('flagTooHigh').textContent = flagStats['too_high'];
-        document.getElementById('flagTooLow').textContent = flagStats['too_low'];
-        document.getElementById('flagSuspicious').textContent = flagStats['suspicious'];
-
-        // Alerts
-        const alertsDiv = document.getElementById('alerts');
-        alertsDiv.innerHTML = '';
-        
-        if (metrics && metrics.treasury) {
-          const mint = metrics.treasury.balance_mint;
-          if (mint !== null && mint < MIN_BALANCE) {
-            alertsDiv.innerHTML += '<div class="alert-critical">🚨 CRITICAL: Treasury below minimum balance!</div>';
-          } else if (mint !== null && mint < MIN_BALANCE * 2) {
-            alertsDiv.innerHTML += '<div class="alert-warning">⚠️ WARNING: Treasury balance getting low</div>';
-          }
-        }
-        
-        if (minutesAgo < 5) {
-          alertsDiv.innerHTML += '<div class="alert-live">🔴 LIVE: Job settled ' + minutesAgo + ' minutes ago</div>';
-        } else if (minutesAgo < 15) {
-          alertsDiv.innerHTML += '<div class="alert-info">✅ ACTIVE: Recent job ' + minutesAgo + ' minutes ago</div>';
-        } else if (minutesAgo < 60) {
-          alertsDiv.innerHTML += '<div class="alert-info">ℹ️ Last job ' + minutesAgo + ' minutes ago</div>';
-        } else {
-          alertsDiv.innerHTML += '<div class="alert-warning">⚠️ Idle: No jobs in 60+ minutes</div>';
-        }
-        
-        if (flaggedJobs.length > 0) {
-          alertsDiv.innerHTML += `<div class="alert-info">🚩 ${flaggedJobs.length} jobs flagged | ${totalFlags} total flags (↑${flagStats['too_high']} ↓${flagStats['too_low']} ?${flagStats['suspicious']})</div>`;
-        }
-        
-        alertsDiv.innerHTML += `<div class="alert-info">📊 ${jobsCount} jobs | ${activeNodes} machines | ${totalMint.toFixed(2)} MINT distributed</div>`;
-        
-        if (alertsDiv.innerHTML === '') {
-          alertsDiv.innerHTML = '<div class="alert-info">✅ All systems nominal</div>';
-        }
-
-        document.getElementById('lastUpdate').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-      } catch (err) { 
-        console.error('Dashboard error:', err);
-        const alertsDiv = document.getElementById('alerts');
-        alertsDiv.innerHTML = `<div class="alert-critical">⚠️ ERROR: ${err.message}</div>`;
-      } finally { 
-        document.getElementById('refresh').classList.remove('loading'); 
-      }
-    };
-
-    // Initial load and refresh interval
-    window.loadData();
-    setInterval(window.loadData, 10000);
+    loadData();
+    setInterval(loadData, 10000);
   </script>
 </body>
 </html>
