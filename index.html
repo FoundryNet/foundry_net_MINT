@@ -6,43 +6,74 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Courier New', monospace; background:#000; color:#0f0; padding:20px; }
     h1 { font-size:1.5rem; margin-bottom:20px; border-bottom:2px solid #0f0; padding-bottom:10px; }
-    h2 { font-size:1.2rem; margin:30px 0 15px 0; border-bottom:1px solid #0f0; padding-bottom:8px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:15px; margin-bottom:20px; }
-    .metric { border:1px solid #0f0; padding:15px; background:#001100; }
+    h2 { font-size:1.1rem; margin:25px 0 15px 0; border-bottom:1px solid #0f0; padding-bottom:8px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+    .metric { border:1px solid #0f0; padding:12px; background:#001100; }
     .metric.ml { border-color:#f0f; background:#110011; }
-    .metric-value { font-size:2rem; font-weight:bold; margin:10px 0; }
-    .metric-label { font-size:0.9rem; opacity:0.7; }
-    table { width:100%; border-collapse:collapse; margin-top:15px; }
-    th,td { text-align:left; padding:10px; border:1px solid #0f0; font-size:0.9rem; }
+    .metric.econ { border-color:#0ff; background:#001111; }
+    .metric.warn { border-color:#ff0; background:#111100; }
+    .metric.danger { border-color:#f00; background:#110000; }
+    .metric-value { font-size:1.8rem; font-weight:bold; margin:8px 0; }
+    .metric-label { font-size:0.8rem; opacity:0.7; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.85rem; }
+    th,td { text-align:left; padding:8px; border:1px solid #0f0; }
     th { background:#001100; }
     tr.flagged { background:#220011; }
     tr.warning { background:#111100; }
-    .alert-ml { border:1px solid #f0f; background:#110011; padding:10px; margin:5px 0; color:#f0f; }
-    .alert-info { border:1px solid #0f0; background:#001100; padding:10px; margin:5px 0; color:#0f0; }
+    tr.healthy { background:#001100; }
+    .alert { padding:10px; margin:5px 0; }
+    .alert-ml { border:1px solid #f0f; background:#110011; color:#f0f; }
+    .alert-econ { border:1px solid #0ff; background:#001111; color:#0ff; }
+    .alert-info { border:1px solid #0f0; background:#001100; color:#0f0; }
     #refresh { position:fixed; top:20px; right:20px; background:#0f0; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
     #refresh:hover { background:#0ff; }
     #exportBtn { position:fixed; top:20px; right:140px; background:#f0f; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
-    #exportBtn:hover { background:#0ff; }
     .footer { margin-top:40px; padding-top:20px; border-top:1px solid #0f0; text-align:center; opacity:0.6; font-size:0.8rem; }
-    .confidence-bar { height:8px; background:#001100; border:1px solid #0f0; margin-top:4px; }
+    .confidence-bar { height:6px; background:#001100; border:1px solid #0f0; margin-top:4px; }
     .confidence-fill { height:100%; }
     .confidence-fill.clean { background:#0f0; }
     .confidence-fill.neutral { background:#ff0; }
     .confidence-fill.flagged { background:#f00; }
-    .trust-delta { font-weight:bold; }
-    .trust-delta.positive { color:#0f0; }
-    .trust-delta.negative { color:#f00; }
-    .dispute-btn { background:#333; color:#f0f; border:1px solid #f0f; padding:4px 8px; cursor:pointer; font-size:0.75rem; }
+    .trust-bar { height:8px; background:#110000; border:1px solid #0f0; }
+    .trust-fill { height:100%; background:#0f0; }
+    .trust-fill.medium { background:#ff0; }
+    .trust-fill.low { background:#f00; }
+    .dispute-btn { background:#333; color:#f0f; border:1px solid #f0f; padding:3px 6px; cursor:pointer; font-size:0.7rem; }
     .dispute-btn:hover { background:#f0f; color:#000; }
-    .dispute-btn.disputed { background:#f0f; color:#000; cursor:default; }
   </style>
 </head>
 <body>
   <button id="refresh" onclick="loadData()">⟳ REFRESH</button>
-  <button id="exportBtn" onclick="exportData()">📥 EXPORT CSV</button>
+  <button id="exportBtn" onclick="exportData()">📥 CSV</button>
   
-  <h1>FOUNDRYNET MONITOR</h1>
+  <h1>FOUNDRYNET ECONOMIC MONITOR</h1>
 
+  <!-- ECONOMIC INDICATORS -->
+  <h2 style="border-color:#0ff;color:#0ff;">📊 ECONOMIC STATE</h2>
+  <div class="grid">
+    <div class="metric econ">
+      <div class="metric-label">ACTIVITY RATIO</div>
+      <div class="metric-value" id="activityRatio">--</div>
+      <div class="metric-label">reward multiplier</div>
+    </div>
+    <div class="metric econ">
+      <div class="metric-label">NETWORK JOBS</div>
+      <div class="metric-value" id="networkJobs">--</div>
+      <div class="metric-label">total processed</div>
+    </div>
+    <div class="metric econ">
+      <div class="metric-label">AVG COMPLEXITY</div>
+      <div class="metric-value" id="avgComplexity">--</div>
+      <div class="metric-label">network mean</div>
+    </div>
+    <div class="metric econ">
+      <div class="metric-label">AVG DURATION</div>
+      <div class="metric-value" id="avgDuration">--</div>
+      <div class="metric-label">seconds</div>
+    </div>
+  </div>
+
+  <!-- ML IMMUNE SYSTEM -->
   <h2 style="border-color:#f0f;color:#f0f;">🧠 ML IMMUNE SYSTEM</h2>
   <div class="grid">
     <div class="metric ml">
@@ -73,17 +104,37 @@
       <div class="metric-value" id="mlFlagSoft">--</div>
     </div>
     <div class="metric ml">
-      <div class="metric-label">✅ CLEAN</div>
-      <div class="metric-value" id="mlClean">--</div>
+      <div class="metric-label">⚪ NEUTRAL</div>
+      <div class="metric-value" id="mlNeutral">--</div>
     </div>
     <div class="metric ml">
-      <div class="metric-label">AVG COMPLEXITY</div>
-      <div class="metric-value" id="mlNetworkComplexity">--</div>
+      <div class="metric-label">✅ CLEAN</div>
+      <div class="metric-value" id="mlClean">--</div>
     </div>
   </div>
 
   <div id="alerts"></div>
 
+  <!-- MACHINE TRUST LEADERBOARD -->
+  <h2 style="border-color:#0ff;color:#0ff;">🏭 MACHINE TRUST</h2>
+  <table id="machineTable">
+    <thead>
+      <tr>
+        <th>MACHINE</th>
+        <th>JOBS</th>
+        <th>TRUST</th>
+        <th>WARMUP</th>
+        <th>AVG CMPLX</th>
+        <th>AVG DUR</th>
+        <th>STATUS</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="7" style="text-align:center;opacity:0.5">Loading...</td></tr>
+    </tbody>
+  </table>
+
+  <!-- RECENT ML SCORES -->
   <h2 style="border-color:#f0f;color:#f0f;">RECENT ML SCORES</h2>
   <table id="mlScoresTable">
     <thead>
@@ -94,19 +145,18 @@
         <th>CMPLX</th>
         <th>CONFIDENCE</th>
         <th>ACTION</th>
-        <th>TRUST</th>
-        <th>CHAIN</th>
+        <th>TRUST Δ</th>
         <th>DISPUTE</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="9" style="text-align:center;opacity:0.5">Loading...</td></tr>
+      <tr><td colspan="8" style="text-align:center;opacity:0.5">Loading...</td></tr>
     </tbody>
   </table>
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet | ML-Powered Economic Immune System | Devnet</div>
+    <div>FoundryNet | Adaptive Economic Immune System | Devnet</div>
   </div>
 
   <script>
@@ -117,13 +167,77 @@
       document.getElementById('refresh').style.opacity = '0.5';
       
       try {
-        const [health, stats, scores] = await Promise.all([
+        const [health, stats, scores, economy] = await Promise.all([
           fetch(`${ML_ENDPOINT}/health`).then(r => r.json()).catch(() => null),
           fetch(`${ML_ENDPOINT}/stats`).then(r => r.json()).catch(() => null),
-          fetch(`${ML_ENDPOINT}/recent-scores`).then(r => r.json()).catch(() => null)
+          fetch(`${ML_ENDPOINT}/recent-scores`).then(r => r.json()).catch(() => null),
+          fetch(`${ML_ENDPOINT}/economy`).then(r => r.json()).catch(() => null),
         ]);
 
-        // Health
+        // Economic indicators
+        if (economy && economy.network) {
+          const net = economy.network;
+          document.getElementById('activityRatio').textContent = net.activity_ratio?.toFixed(3) || '--';
+          document.getElementById('networkJobs').textContent = net.total_jobs || 0;
+          document.getElementById('avgComplexity').textContent = net.avg_complexity?.toFixed(2) || '--';
+          document.getElementById('avgDuration').textContent = net.avg_duration?.toFixed(0) + 's' || '--';
+          
+          // Color activity ratio
+          const arEl = document.getElementById('activityRatio');
+          if (net.activity_ratio < 0.5) {
+            arEl.style.color = '#f00';
+          } else if (net.activity_ratio < 0.8) {
+            arEl.style.color = '#ff0';
+          } else {
+            arEl.style.color = '#0f0';
+          }
+        }
+
+        // Machine trust table
+        if (economy && economy.machines) {
+          const tbody = document.querySelector('#machineTable tbody');
+          tbody.innerHTML = '';
+          
+          economy.machines.forEach(m => {
+            const row = tbody.insertRow();
+            
+            // Trust color
+            let trustColor = '#0f0';
+            let trustClass = 'healthy';
+            if (m.trust < 50) { trustColor = '#f00'; trustClass = 'flagged'; }
+            else if (m.trust < 80) { trustColor = '#ff0'; trustClass = 'warning'; }
+            
+            // Status
+            let status = '✅ Healthy';
+            if (m.trust <= 0) status = '🚫 BANNED';
+            else if (m.trust < 50) status = '⚠️ At Risk';
+            else if (m.trust < 80) status = '🔶 Warning';
+            
+            // Warmup indicator
+            const warmupPct = (m.warmup * 100).toFixed(0);
+            const warmupColor = m.warmup >= 1.0 ? '#0f0' : '#ff0';
+            
+            row.className = trustClass;
+            row.innerHTML = `
+              <td style="font-size:0.8rem">${m.id}</td>
+              <td>${m.jobs}</td>
+              <td>
+                <span style="color:${trustColor};font-weight:bold">${m.trust}</span>
+                <div class="trust-bar"><div class="trust-fill ${m.trust < 50 ? 'low' : m.trust < 80 ? 'medium' : ''}" style="width:${m.trust}%"></div></div>
+              </td>
+              <td style="color:${warmupColor}">${warmupPct}%</td>
+              <td>${m.avg_complexity}</td>
+              <td>${m.avg_duration}s</td>
+              <td>${status}</td>
+            `;
+          });
+          
+          if (economy.machines.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;opacity:0.5">No machines yet</td></tr>';
+          }
+        }
+
+        // Health & ML stats
         if (health) {
           document.getElementById('mlStatus').textContent = health.status === 'healthy' ? 'ACTIVE' : 'OFFLINE';
           document.getElementById('mlStatus').style.color = health.status === 'healthy' ? '#0f0' : '#f00';
@@ -132,35 +246,41 @@
           document.getElementById('mlDisputes').textContent = health.disputes || 0;
         }
 
-        // Stats
-        if (stats) {
-          document.getElementById('mlNetworkComplexity').textContent = stats.network_avg_complexity?.toFixed(2) || '--';
-        }
-
         // Scores
         if (scores && scores.jobs) {
           const jobs = scores.jobs;
-          let flagStrong = 0, flagSoft = 0, clean = 0;
+          let flagStrong = 0, flagSoft = 0, neutral = 0, clean = 0;
 
           jobs.forEach(job => {
             if (job.action === 'flag_strong') flagStrong++;
             else if (job.action === 'flag_soft') flagSoft++;
+            else if (job.action === 'neutral') neutral++;
             else if (job.action === 'clean') clean++;
           });
 
           document.getElementById('mlFlagStrong').textContent = flagStrong;
           document.getElementById('mlFlagSoft').textContent = flagSoft;
+          document.getElementById('mlNeutral').textContent = neutral;
           document.getElementById('mlClean').textContent = clean;
 
           // Alerts
           const alertsDiv = document.getElementById('alerts');
-          alertsDiv.innerHTML = `<div class="alert-ml">🧠 ${jobs.length} scored | ${flagStrong} strong flags | ${flagSoft} soft | ${clean} clean</div>`;
+          alertsDiv.innerHTML = '';
+          
+          if (economy && economy.network) {
+            const ar = economy.network.activity_ratio;
+            if (ar < 0.5) {
+              alertsDiv.innerHTML += `<div class="alert alert-econ">⚡ HIGH LOAD: Activity ratio at ${ar.toFixed(3)} - rewards reduced</div>`;
+            }
+          }
+          
+          alertsDiv.innerHTML += `<div class="alert alert-ml">🧠 ${jobs.length} scored | ${flagStrong} strong | ${flagSoft} soft | ${neutral} neutral | ${clean} clean</div>`;
 
-          // Table
+          // Scores table
           const tbody = document.querySelector('#mlScoresTable tbody');
           tbody.innerHTML = '';
 
-          jobs.slice().reverse().slice(0, 30).forEach(job => {
+          jobs.slice().reverse().slice(0, 25).forEach(job => {
             const row = tbody.insertRow();
             const conf = (job.confidence * 100).toFixed(1);
             
@@ -168,17 +288,18 @@
             else if (job.action === 'flag_soft') row.classList.add('warning');
 
             const confClass = job.confidence > 0.7 ? 'flagged' : job.confidence > 0.5 ? 'neutral' : 'clean';
-            const trustClass = job.trust_delta > 0 ? 'positive' : job.trust_delta < 0 ? 'negative' : '';
+            const trustClass = job.trust_delta > 0 ? 'color:#0f0' : job.trust_delta < 0 ? 'color:#f00' : 'color:#ff0';
             const trustSign = job.trust_delta > 0 ? '+' : '';
-            
-            const chainStatus = job.trust_update?.status === 'sent' ? '✓' : job.trust_update?.status === 'error' ? '✗' : '⏳';
-            const chainColor = job.trust_update?.status === 'sent' ? '#0f0' : job.trust_update?.status === 'error' ? '#f00' : '#ff0';
             
             const jobHash = job.job_hash || '';
             const isDisputed = disputedJobs.has(jobHash);
             const disputeBtn = isDisputed 
-              ? `<button class="dispute-btn disputed">DISPUTED</button>`
+              ? `<span style="color:#f0f">DISPUTED</span>`
               : `<button class="dispute-btn" onclick="openDispute('${jobHash}', '${job.action}')">DISPUTE</button>`;
+
+            // Show economic data if available
+            const econ = job.economics || {};
+            const machTrust = econ.machine_trust !== undefined ? econ.machine_trust : '--';
 
             row.innerHTML = `
               <td style="font-size:0.75rem">${job.timestamp?.substring(11, 19) || '--'}</td>
@@ -189,9 +310,8 @@
                 <span style="color:${confClass === 'flagged' ? '#f00' : confClass === 'neutral' ? '#ff0' : '#0f0'}">${conf}%</span>
                 <div class="confidence-bar"><div class="confidence-fill ${confClass}" style="width:${conf}%"></div></div>
               </td>
-              <td style="color:${job.action === 'flag_strong' ? '#f00' : job.action === 'flag_soft' ? '#ff0' : '#0f0'}">${job.action || '--'}</td>
-              <td><span class="trust-delta ${trustClass}">${trustSign}${job.trust_delta || 0}</span></td>
-              <td style="color:${chainColor}">${chainStatus}</td>
+              <td style="color:${job.action === 'flag_strong' ? '#f00' : job.action === 'flag_soft' ? '#ff0' : job.action === 'neutral' ? '#888' : '#0f0'}">${job.action || '--'}</td>
+              <td style="${trustClass};font-weight:bold">${trustSign}${job.trust_delta || 0}</td>
               <td>${disputeBtn}</td>
             `;
           });
@@ -206,10 +326,7 @@
     }
 
     function openDispute(jobHash, currentAction) {
-      const type = currentAction.includes('flag') 
-        ? 'false_positive' 
-        : 'false_negative';
-      
+      const type = currentAction.includes('flag') ? 'false_positive' : 'false_negative';
       const reason = prompt(`Dispute this ${currentAction} decision?\n\nType: ${type}\nReason (optional):`);
       
       if (reason !== null) {
@@ -222,19 +339,13 @@
         const response = await fetch(`${ML_ENDPOINT}/dispute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            job_hash: jobHash,
-            dispute_type: type,
-            reason: reason || ''
-          })
+          body: JSON.stringify({ job_hash: jobHash, dispute_type: type, reason: reason || '' })
         });
         
         if (response.ok) {
           disputedJobs.add(jobHash);
-          alert('✅ Dispute recorded for retraining');
+          alert('✅ Dispute recorded');
           loadData();
-        } else {
-          alert('❌ Failed to submit dispute');
         }
       } catch (err) {
         alert('❌ Error: ' + err.message);
@@ -246,7 +357,7 @@
     }
 
     loadData();
-    setInterval(loadData, 10000);
+    setInterval(loadData, 5000);
   </script>
 </body>
 </html>
