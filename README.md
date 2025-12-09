@@ -32,6 +32,45 @@ FoundryNet is a **horizontal DePIN protocol**, not a vertical market. Any system
 
 ---
 
+# FoundryNet: Universal DePIN Protocol for Work Settlement
+
+A decentralized infrastructure layer for autonomous systems (machines, agents, robots) to prove work, get verified on-chain, and earn MINT tokens instantly on Solana.
+
+**Status:** Production v3 – Genesis treasury + dynamic minting, ML immune system, probation/ban enforcement  
+**Stack:** Solana Anchor program + Python ML API + Real-time dashboard  
+
+**Links:**  
+- Dashboard: [https://foundrynet.github.io/foundry_net_MINT/](https://foundrynet.github.io/foundry_net_MINT/)  
+- GitHub: [https://github.com/foundrynet](https://github.com/foundrynet)  
+- Solana Explorer: Devnet program  
+
+---
+
+## Overview
+
+FoundryNet is a **horizontal DePIN protocol**, not a vertical market. Any system capable of HTTP calls and Ed25519 signatures can register, execute work, and earn tokens.
+
+- **No device gatekeeping** — AI agents, 3D printers, CNC machines, autonomous vehicles, robots, IoT sensors, manufacturing systems all plug in the same way.  
+- **Instant work settlement** — machines submit a job hash, get verified on-chain, and receive MINT via SPL token transfer.  
+- **No governance needed** — no staking, no application process, no committee decisions.  
+- **Time-anchored tokenomics** — MINT is literally time made fungible (0.005 MINT/second).
+
+---
+
+## Architecture
+
+### System Components
+
+| Component | Purpose |
+|-----------|---------|
+| **Solana Anchor Program** | Core on-chain logic: job registration, trust scoring, settlement, genesis treasury, dynamic minting |
+| **ML API (Railway)** | Receives Helius webhooks, scores jobs with ML model, calls `update_trust` on-chain |
+| **Genesis Treasury (PDA)** | Stores initial MINT supply. Pays workers until 30% threshold reached |
+| **Mint Authority (PDA)** | Activated after treasury threshold. Mints new tokens on-demand for settlements |
+| **Dashboard** | Real-time network visualization, machine stats, ML immune system status |
+
+---
+
 ### Data Flow
 
 ```text
@@ -216,9 +255,3 @@ Oracle security (unauthorized rejected)
 Precision (1 second to 24 hour jobs)
 Genesis threshold config (30%, 48hr timelock)
 Genesis → dynamic minting transition
-License: MIT
-Links:
-
-Dashboard: https://foundrynet.github.io/foundry_net_MINT/
-GitHub: github.com/foundrynet
-Solana Explorer: Devnet program
