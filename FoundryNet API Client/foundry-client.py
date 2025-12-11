@@ -1,229 +1,427 @@
-import nacl.signing
-import base58
-import requests
+"""
+FoundryNet Solana Client - Direct on-chain interaction
+No intermediary backend - talks directly to the Solana program
+"""
+
 import json
 import hashlib
-import time
 import os
-from uuid import uuid4
+import base58
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
+from uuid import uuid4
 
-FOUNDRY_MESSAGE_VERSION = "FN1"
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
+from solders.system_program import ID as SYSTEM_PROGRAM_ID
+from solana.rpc.api import Client
+from solana.rpc.commitment import Confirmed
+from solana.transaction import Transaction
+from solders.instruction import Instruction, AccountMeta
+
+# ============================================
+# CONFIGURATION - UPDATE THESE FOR YOUR SETUP
+# ============================================
+
+PROGRAM_ID = Pubkey.from_string("4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL")
+STATE_ACCOUNT = Pubkey.from_string("2Lm7hrtqK9W5tykVu4U37nUNJiiFh6WQ1rD8ZJWXomr2")
+RPC_URL = "https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa"
+
 DEFAULT_CREDENTIAL_DIR = ".foundry"
 
+# Anchor instruction discriminators (first 8 bytes of sha256("global:<instruction_name>"))
+DISCRIMINATORS = {
+    "register_machine": bytes([24, 158, 153, 66, 250, 167, 91, 28]),
+    "record_job": bytes([34, 137, 62, 98, 251, 75, 115, 28]),
+}
+
+
 class FoundryClient:
+    """
+    Direct Solana client for FoundryNet protocol.
+    
+    Usage:
+        client = FoundryClient()
+        client.init()
+        
+        # Register machine (one-time)
+        client.register_machine()
+        
+        # Submit jobs
+        job_hash = client.generate_job_hash("some-content")
+        client.record_job(job_hash, duration_seconds=3600, complexity=1000)
+    """
+    
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         config = config or {}
-
-        self.api_url = config.get(
-            "api_url",
-            "https://lsijwmklicmqtuqxhgnu.supabase.co/functions/v1/main-ts"
-        )
-        self.network = config.get("network", "mainnet")
-        self.retry_attempts = config.get("retry_attempts", 3)
-        self.retry_delay = config.get("retry_delay", 2.0)
+        
+        self.rpc_url = config.get("rpc_url", RPC_URL)
+        self.program_id = Pubkey.from_string(config.get("program_id", str(PROGRAM_ID)))
+        self.state_account = Pubkey.from_string(config.get("state_account", str(STATE_ACCOUNT)))
         self.debug = config.get("debug", False)
-
-        self.credential_dir = Path(
-            config.get("credential_dir", DEFAULT_CREDENTIAL_DIR)
-        )
-
-        self.machine_uuid: Optional[str] = None
-        self.signing_key: Optional[nacl.signing.SigningKey] = None
-        self.verify_key: Optional[nacl.signing.VerifyKey] = None
-
+        
+        self.credential_dir = Path(config.get("credential_dir", DEFAULT_CREDENTIAL_DIR))
+        
+        # Solana client
+        self.client = Client(self.rpc_url)
+        
+        # Machine identity
+        self.machine_keypair: Optional[Keypair] = None
+        self.owner_keypair: Optional[Keypair] = None
+        
     # -----------------------------
     # Logging
     # -----------------------------
-
+    
     def log(self, level: str, message: str, data: Optional[Dict] = None):
         if not self.debug and level == "debug":
             return
         timestamp = datetime.utcnow().isoformat()
-        print(f"[FoundryNet:{self.network}] [{timestamp}] [{level.upper()}] {message}", data or {})
-
+        prefix = f"[FoundryNet] [{timestamp}] [{level.upper()}]"
+        if data:
+            print(f"{prefix} {message}", data)
+        else:
+            print(f"{prefix} {message}")
+    
     # -----------------------------
-    # Retry wrapper
+    # Identity Management
     # -----------------------------
-
-    def _retry(self, fn, context: str):
-        last_error = None
-        for attempt in range(1, self.retry_attempts + 1):
-            try:
-                return fn()
-            except Exception as error:
-                last_error = error
-                self.log(
-                    "warn",
-                    f"{context} failed (attempt {attempt}/{self.retry_attempts})",
-                    {"error": str(error)}
-                )
-                if attempt < self.retry_attempts:
-                    time.sleep(self.retry_delay * attempt)
-
-        self.log("error", f"{context} failed permanently", {"error": str(last_error)})
-        raise last_error
-
-    # -----------------------------
-    # Identity management
-    # -----------------------------
-
-    def _credential_path(self, machine_uuid: str) -> Path:
-        return self.credential_dir / f"{machine_uuid}.json"
-
-    def generate_machine_id(self) -> Dict[str, str]:
-        self.machine_uuid = str(uuid4())
-        self.signing_key = nacl.signing.SigningKey.generate()
-        self.verify_key = self.signing_key.verify_key
-
+    
+    def _credential_path(self) -> Path:
+        return self.credential_dir / "machine_keypair.json"
+    
+    def _owner_path(self) -> Path:
+        return self.credential_dir / "owner_keypair.json"
+    
+    def generate_machine_identity(self) -> Dict[str, str]:
+        """Generate new machine keypair."""
+        self.machine_keypair = Keypair()
+        
         identity = {
-            "machine_uuid": self.machine_uuid,
-            "public_key": base58.b58encode(bytes(self.verify_key)).decode(),
-            "secret_key": base58.b58encode(bytes(self.signing_key)).decode(),
+            "public_key": str(self.machine_keypair.pubkey()),
+            "secret_key": base58.b58encode(bytes(self.machine_keypair)).decode(),
+            "created_at": datetime.utcnow().isoformat(),
         }
-
+        
         self.log("info", "Generated new machine identity", {
-            "machine_uuid": identity["machine_uuid"],
-            "public_key": identity["public_key"],
+            "public_key": identity["public_key"]
         })
-
+        
         return identity
-
+    
     def save_credentials(self, identity: Dict[str, str]):
+        """Save machine credentials to disk."""
         self.credential_dir.mkdir(parents=True, exist_ok=True)
-        path = self._credential_path(identity["machine_uuid"])
-
+        path = self._credential_path()
+        
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            json.dump({
-                **identity,
-                "network": self.network,
-                "created_at": datetime.utcnow().isoformat(),
-            }, f, indent=2)
-
+            json.dump(identity, f, indent=2)
+        
         self.log("debug", "Credentials saved", {"path": str(path)})
-
+    
     def load_credentials(self) -> bool:
-        if not self.credential_dir.exists():
+        """Load existing machine credentials."""
+        path = self._credential_path()
+        
+        if not path.exists():
             return False
-
-        files = list(self.credential_dir.glob("*.json"))
-        if not files:
-            return False
-
-        with open(files[0], "r") as f:
+        
+        with open(path, "r") as f:
             creds = json.load(f)
-
-        self.machine_uuid = creds["machine_uuid"]
-        self.signing_key = nacl.signing.SigningKey(
+        
+        self.machine_keypair = Keypair.from_bytes(
             base58.b58decode(creds["secret_key"])
         )
-        self.verify_key = self.signing_key.verify_key
-
+        
         self.log("info", "Loaded existing credentials", {
-            "machine_uuid": self.machine_uuid
+            "public_key": str(self.machine_keypair.pubkey())
         })
         return True
-
+    
+    def set_owner_keypair(self, keypair_path: str):
+        """Load owner keypair (for paying transaction fees)."""
+        with open(keypair_path, "r") as f:
+            secret = json.load(f)
+        self.owner_keypair = Keypair.from_bytes(bytes(secret))
+        self.log("info", "Owner keypair loaded", {
+            "public_key": str(self.owner_keypair.pubkey())
+        })
+    
+    # -----------------------------
+    # PDA Derivation
+    # -----------------------------
+    
+    def get_machine_state_pda(self) -> tuple[Pubkey, int]:
+        """Derive the machine state PDA."""
+        return Pubkey.find_program_address(
+            [b"machine", bytes(self.machine_keypair.pubkey())],
+            self.program_id
+        )
+    
+    def get_job_pda(self, job_hash: str) -> tuple[Pubkey, int]:
+        """Derive the job PDA."""
+        return Pubkey.find_program_address(
+            [b"job", job_hash.encode()],
+            self.program_id
+        )
+    
     # -----------------------------
     # Initialization
     # -----------------------------
-
-    def init(self, metadata: Optional[Dict] = None) -> Dict:
-        metadata = metadata or {}
-
-        if self.load_credentials():
-            return {"existing": True, "machine_uuid": self.machine_uuid}
-
-        identity = self.generate_machine_id()
-        self.save_credentials(identity)
-        self.register_machine(metadata)
-
+    
+    def init(self, owner_keypair_path: Optional[str] = None) -> Dict:
+        """
+        Initialize the client.
+        
+        Args:
+            owner_keypair_path: Path to owner keypair JSON (for tx fees)
+        
+        Returns:
+            Dict with initialization status
+        """
+        # Load or generate machine identity
+        existing = self.load_credentials()
+        
+        if not existing:
+            identity = self.generate_machine_identity()
+            self.save_credentials(identity)
+        
+        # Load owner keypair if provided
+        if owner_keypair_path:
+            self.set_owner_keypair(owner_keypair_path)
+        elif not self.owner_keypair:
+            # Default to Solana CLI keypair
+            default_path = os.path.expanduser("~/.config/solana/id.json")
+            if os.path.exists(default_path):
+                self.set_owner_keypair(default_path)
+            else:
+                self.log("warn", "No owner keypair found - set with set_owner_keypair()")
+        
         return {
-            "existing": False,
-            "machine_uuid": self.machine_uuid,
-            "identity": identity
+            "existing": existing,
+            "machine_pubkey": str(self.machine_keypair.pubkey()),
+            "owner_pubkey": str(self.owner_keypair.pubkey()) if self.owner_keypair else None,
         }
-
+    
     # -----------------------------
-    # Network calls
+    # On-Chain Operations
     # -----------------------------
-
-    def register_machine(self, metadata: Optional[Dict] = None) -> Dict:
-        metadata = metadata or {}
-
-        def _register():
-            r = requests.post(
-                f"{self.api_url}/register-machine",
-                json={
-                    "machine_uuid": self.machine_uuid,
-                    "machine_pubkey_base58": base58.b58encode(bytes(self.verify_key)).decode(),
-                    "metadata": metadata,
-                    "network": self.network,
-                }
-            )
-            if not r.ok:
-                raise Exception(r.text)
-            return r.json()
-
-        return self._retry(_register, "Machine registration")
-
+    
+    def register_machine(self) -> str:
+        """
+        Register this machine on-chain.
+        
+        Returns:
+            Transaction signature
+        """
+        if not self.machine_keypair:
+            raise ValueError("Machine keypair not initialized. Call init() first.")
+        if not self.owner_keypair:
+            raise ValueError("Owner keypair not set. Call set_owner_keypair() first.")
+        
+        machine_state_pda, bump = self.get_machine_state_pda()
+        
+        self.log("info", "Registering machine", {
+            "machine": str(self.machine_keypair.pubkey()),
+            "machine_state_pda": str(machine_state_pda),
+            "owner": str(self.owner_keypair.pubkey()),
+        })
+        
+        # Build instruction data (just discriminator for register_machine)
+        data = DISCRIMINATORS["register_machine"]
+        
+        # Build instruction
+        instruction = Instruction(
+            program_id=self.program_id,
+            accounts=[
+                AccountMeta(pubkey=self.state_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=machine_state_pda, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.machine_keypair.pubkey(), is_signer=True, is_writable=False),
+                AccountMeta(pubkey=self.owner_keypair.pubkey(), is_signer=False, is_writable=False),
+                AccountMeta(pubkey=self.owner_keypair.pubkey(), is_signer=True, is_writable=True),
+                AccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+            ],
+            data=data,
+        )
+        
+        # Build and send transaction
+        recent_blockhash = self.client.get_latest_blockhash().value.blockhash
+        
+        tx = Transaction.new_signed_with_payer(
+            [instruction],
+            payer=self.owner_keypair.pubkey(),
+            signing_keypairs=[self.owner_keypair, self.machine_keypair],
+            recent_blockhash=recent_blockhash,
+        )
+        
+        result = self.client.send_transaction(tx)
+        sig = str(result.value)
+        
+        self.log("info", "Machine registered!", {"signature": sig})
+        return sig
+    
+    def record_job(
+        self,
+        job_hash: str,
+        duration_seconds: int,
+        complexity: int = 1000
+    ) -> str:
+        """
+        Record a completed job on-chain.
+        
+        Args:
+            job_hash: Unique job identifier (use generate_job_hash())
+            duration_seconds: How long the job took
+            complexity: Complexity score (500-2000, default 1000)
+        
+        Returns:
+            Transaction signature
+        """
+        if not self.machine_keypair:
+            raise ValueError("Machine keypair not initialized. Call init() first.")
+        if not self.owner_keypair:
+            raise ValueError("Owner keypair not set. Call set_owner_keypair() first.")
+        
+        # Validate complexity
+        if complexity < 500 or complexity > 2000:
+            raise ValueError("Complexity must be between 500 and 2000")
+        
+        machine_state_pda, _ = self.get_machine_state_pda()
+        job_pda, _ = self.get_job_pda(job_hash)
+        
+        self.log("info", "Recording job", {
+            "job_hash": job_hash,
+            "duration_seconds": duration_seconds,
+            "complexity": complexity,
+            "job_pda": str(job_pda),
+        })
+        
+        # Build instruction data
+        # Discriminator + job_hash (string) + duration_seconds (u64) + complexity (u32)
+        job_hash_bytes = job_hash.encode()
+        data = (
+            DISCRIMINATORS["record_job"] +
+            len(job_hash_bytes).to_bytes(4, "little") +  # String length prefix
+            job_hash_bytes +
+            duration_seconds.to_bytes(8, "little") +
+            complexity.to_bytes(4, "little")
+        )
+        
+        # Build instruction
+        instruction = Instruction(
+            program_id=self.program_id,
+            accounts=[
+                AccountMeta(pubkey=self.state_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=machine_state_pda, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=job_pda, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.machine_keypair.pubkey(), is_signer=True, is_writable=False),
+                AccountMeta(pubkey=self.owner_keypair.pubkey(), is_signer=True, is_writable=True),
+                AccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+            ],
+            data=data,
+        )
+        
+        # Build and send transaction
+        recent_blockhash = self.client.get_latest_blockhash().value.blockhash
+        
+        tx = Transaction.new_signed_with_payer(
+            [instruction],
+            payer=self.owner_keypair.pubkey(),
+            signing_keypairs=[self.owner_keypair, self.machine_keypair],
+            recent_blockhash=recent_blockhash,
+        )
+        
+        result = self.client.send_transaction(tx)
+        sig = str(result.value)
+        
+        self.log("info", "Job recorded!", {"signature": sig})
+        return sig
+    
     # -----------------------------
-    # Jobs
+    # Helpers
     # -----------------------------
-
+    
     def generate_job_hash(self, content_hash: str, nonce: Optional[str] = None) -> str:
+        """
+        Generate a unique job hash.
+        
+        Args:
+            content_hash: Hash of the work content
+            nonce: Optional nonce (auto-generated if not provided)
+        
+        Returns:
+            Unique job hash string
+        """
         nonce = nonce or uuid4().hex
-        raw = f"{self.machine_uuid}|{content_hash}|{nonce}"
+        machine_pubkey = str(self.machine_keypair.pubkey()) if self.machine_keypair else "unknown"
+        raw = f"{machine_pubkey}|{content_hash}|{nonce}"
         digest = hashlib.sha256(raw.encode()).hexdigest()
         return f"job_{digest[:16]}"
+    
+    def get_balance(self) -> float:
+        """Get SOL balance of owner wallet."""
+        if not self.owner_keypair:
+            return 0.0
+        result = self.client.get_balance(self.owner_keypair.pubkey())
+        return result.value / 1e9
+    
+    def check_machine_registered(self) -> bool:
+        """Check if this machine is registered on-chain."""
+        if not self.machine_keypair:
+            return False
+        
+        machine_state_pda, _ = self.get_machine_state_pda()
+        result = self.client.get_account_info(machine_state_pda)
+        return result.value is not None
 
-    def submit_job(self, job_hash: str, complexity: float, payload: Optional[Dict] = None):
-        payload = payload or {}
-        complexity = round(complexity, 2)
 
-        def _submit():
-            r = requests.post(
-                f"{self.api_url}/submit-job",
-                json={
-                    "machine_uuid": self.machine_uuid,
-                    "job_hash": job_hash,
-                    "complexity": complexity,
-                    "payload": payload,
-                }
-            )
-            if not r.ok and r.status_code != 409:
-                raise Exception(r.text)
-            return r.json()
+# ============================================
+# CLI Usage
+# ============================================
 
-        return self._retry(_submit, "Submit job")
-
-    def complete_job(self, job_hash: str, recipient_wallet: str) -> Dict:
-        timestamp = datetime.utcnow().isoformat()
-        message = f"{FOUNDRY_MESSAGE_VERSION}|{job_hash}|{recipient_wallet}|{timestamp}"
-        signature = self.signing_key.sign(message.encode()).signature
-
-        def _complete():
-            r = requests.post(
-                f"{self.api_url}/complete-job",
-                json={
-                    "machine_uuid": self.machine_uuid,
-                    "job_hash": job_hash,
-                    "recipient_wallet": recipient_wallet,
-                    "completion_proof": {
-                        "version": FOUNDRY_MESSAGE_VERSION,
-                        "timestamp": timestamp,
-                        "signature_base58": base58.b58encode(signature).decode(),
-                    }
-                }
-            )
-            if not r.ok:
-                raise Exception(r.text)
-            return r.json()
-
-        return self._retry(_complete, "Complete job")
+if __name__ == "__main__":
+    import sys
+    
+    client = FoundryClient({"debug": True})
+    result = client.init()
+    print(f"\nInitialized: {result}")
+    
+    print(f"SOL Balance: {client.get_balance():.4f} SOL")
+    
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        
+        if cmd == "register":
+            if client.check_machine_registered():
+                print("Machine already registered!")
+            else:
+                sig = client.register_machine()
+                print(f"Registered! Signature: {sig}")
+        
+        elif cmd == "job":
+            content = sys.argv[2] if len(sys.argv) > 2 else "test-content"
+            duration = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+            
+            job_hash = client.generate_job_hash(content)
+            print(f"Job hash: {job_hash}")
+            
+            sig = client.record_job(job_hash, duration_seconds=duration)
+            print(f"Job recorded! Signature: {sig}")
+        
+        elif cmd == "status":
+            registered = client.check_machine_registered()
+            print(f"Machine registered: {registered}")
+        
+        else:
+            print(f"Unknown command: {cmd}")
+            print("Commands: register, job [content] [duration], status")
+    else:
+        print("\nCommands:")
+        print("  python foundry_client_solana.py register")
+        print("  python foundry_client_solana.py job [content] [duration]")
+        print("  python foundry_client_solana.py status")
 
 
 // ============================================================================
