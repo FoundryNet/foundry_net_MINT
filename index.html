@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>FoundryNet Monitor v2</title>
+  <title>FoundryNet Monitor v2 - Mainnet</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Courier New', monospace; background:#000; color:#0f0; padding:20px; }
@@ -33,22 +33,32 @@
     .alert { padding:10px; margin:5px 0; font-size:0.9rem; }
     .alert-mint { border:1px solid #0ff; background:#001111; color:#0ff; }
     .alert-ml { border:1px solid #f0f; background:#110011; color:#f0f; }
+    .alert-network { border:1px solid #0f0; background:#001100; color:#0f0; }
     #refresh { position:fixed; top:20px; right:20px; background:#0f0; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
     #exportBtn { position:fixed; top:20px; right:140px; background:#f0f; color:#000; border:none; padding:10px 20px; cursor:pointer; font-weight:bold; }
     .footer { margin-top:40px; padding-top:20px; border-top:1px solid #0f0; text-align:center; opacity:0.6; font-size:0.8rem; }
     .formula { font-family: monospace; background:#001100; padding:15px; border:1px solid #0ff; margin:10px 0; font-size:0.9rem; }
     .dispute-btn { background:#333; color:#f0f; border:1px solid #f0f; padding:3px 6px; cursor:pointer; font-size:0.7rem; }
     .dispute-btn:hover { background:#f0f; color:#000; }
+    a { color:#0ff; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .network-badge { display:inline-block; background:#0f0; color:#000; padding:2px 8px; font-size:0.7rem; font-weight:bold; border-radius:3px; margin-left:10px; }
+    .tx-link { font-size:0.7rem; color:#0ff; }
+    .tx-link:hover { color:#fff; }
   </style>
 </head>
 <body>
   <button id="refresh" onclick="loadData()">⟳ REFRESH</button>
   <button id="exportBtn" onclick="exportData()">📥 CSV</button>
   
-  <h1>⚙️ FOUNDRYNET ECONOMIC MONITOR v2</h1>
+  <h1>⚙️ FOUNDRYNET ECONOMIC MONITOR v2 <span class="network-badge">MAINNET</span></h1>
 
   <div class="formula">
     <strong>WAGE FORMULA:</strong> reward = duration × 0.005 × normalized_complexity × trust × warmup
+    <br><br>
+    <strong>PROGRAM:</strong> <a href="https://solscan.io/account/4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL" target="_blank">4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL</a>
+    &nbsp;|&nbsp;
+    <strong>MINT:</strong> <a href="https://solscan.io/token/5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da" target="_blank">5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da</a>
   </div>
 
   <!-- MINT ECONOMICS -->
@@ -134,10 +144,11 @@
         <th>WARMUP</th>
         <th>RATE/HR</th>
         <th>STATUS</th>
+        <th>SOLSCAN</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="7" style="text-align:center;opacity:0.5">Loading...</td></tr>
+      <tr><td colspan="8" style="text-align:center;opacity:0.5">Loading...</td></tr>
     </tbody>
   </table>
 
@@ -154,20 +165,23 @@
         <th>FINAL</th>
         <th>ML</th>
         <th>ACTION</th>
+        <th>TX</th>
       </tr>
     </thead>
     <tbody>
-      <tr><td colspan="8" style="text-align:center;opacity:0.5">Loading...</td></tr>
+      <tr><td colspan="9" style="text-align:center;opacity:0.5">Loading...</td></tr>
     </tbody>
   </table>
 
   <div class="footer">
     <div id="lastUpdate">Last update: --</div>
-    <div>FoundryNet v2 | Wages for Machines | Time Anchor: 0.005 MINT/sec</div>
+    <div>FoundryNet v2 | Wages for Machines | Time Anchor: 0.005 MINT/sec | <a href="https://solscan.io/account/4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL" target="_blank">Mainnet</a></div>
   </div>
 
   <script>
-    const ML_ENDPOINT = 'https://web-production-4ab01.up.railway.app';
+    const ML_ENDPOINT = 'https://web-production-ea0f1.up.railway.app';
+    const SOLSCAN_TX = 'https://solscan.io/tx/';
+    const SOLSCAN_ACCOUNT = 'https://solscan.io/account/';
     let disputedJobs = new Set();
 
     async function loadData() {
@@ -212,12 +226,18 @@
             else if (m.trust < 80) status = '⚠️ Warning';
             
             const warmupPct = Math.round(m.warmup * 100);
+            const machineId = m.id || m.id_short || '--';
+            const machineShort = machineId.length > 12 ? machineId.substring(0, 12) + '...' : machineId;
+            
+            // Get recent TX links
+            const recentTxs = m.recent_transactions || [];
+            const latestTx = recentTxs.length > 0 ? recentTxs[recentTxs.length - 1] : null;
             
             row.className = trustClass;
             row.innerHTML = `
-              <td style="font-size:0.75rem">${m.id}</td>
+              <td style="font-size:0.75rem" title="${machineId}">${machineShort}</td>
               <td>${m.jobs}</td>
-              <td style="color:#0ff;font-weight:bold">${m.total_earned.toFixed(2)} MINT</td>
+              <td style="color:#0ff;font-weight:bold">${m.total_earned.toFixed(4)} MINT</td>
               <td>
                 <span style="color:${trustColor};font-weight:bold">${m.trust}</span>
                 <div class="trust-bar"><div class="trust-fill ${m.trust < 50 ? 'low' : m.trust < 80 ? 'medium' : ''}" style="width:${m.trust}%"></div></div>
@@ -225,6 +245,10 @@
               <td>${warmupPct}%</td>
               <td>${m.earning_rate_per_hour.toFixed(2)}</td>
               <td>${status}</td>
+              <td>
+                <a href="${SOLSCAN_ACCOUNT}${machineId}" target="_blank" class="tx-link">📋 Account</a>
+                ${latestTx ? `<br><a href="${latestTx.url || SOLSCAN_TX + latestTx.sig}" target="_blank" class="tx-link">🔗 Latest TX</a>` : ''}
+              </td>
             `;
           });
         }
@@ -250,7 +274,10 @@
 
           // Alerts
           const alertsDiv = document.getElementById('alerts');
-          alertsDiv.innerHTML = `<div class="alert alert-ml">🧠 ${scores.jobs.length} scored | ${flagStrong} strong flags | ${flagSoft} soft flags | ${clean} clean</div>`;
+          alertsDiv.innerHTML = `
+            <div class="alert alert-network">🌐 Network: Solana Mainnet | Program: 4ZvTZ3...5t2AKL</div>
+            <div class="alert alert-ml">🧠 ${scores.jobs.length} scored | ${flagStrong} strong flags | ${flagSoft} soft flags | ${clean} clean</div>
+          `;
 
           // Scores table
           const tbody = document.querySelector('#scoresTable tbody');
@@ -259,6 +286,7 @@
           scores.jobs.slice().reverse().slice(0, 30).forEach(job => {
             const row = tbody.insertRow();
             const econ = job.economics || {};
+            const solscan = job.solscan || {};
             
             if (job.action === 'flag_strong') row.classList.add('flagged');
             else if (job.action === 'flag_soft') row.classList.add('warning');
@@ -267,11 +295,27 @@
             const confClass = job.confidence > 0.7 ? 'flagged' : job.confidence > 0.5 ? 'neutral' : 'clean';
             const actionColor = job.action === 'flag_strong' ? '#f00' : job.action === 'flag_soft' ? '#ff0' : '#0f0';
             
+            const machineId = job.machine_id || '--';
+            const machineShort = machineId.substring(0, 6);
+            
+            // Build TX links
+            let txLinks = '';
+            if (solscan.record) {
+              txLinks += `<a href="${solscan.record}" target="_blank" class="tx-link" title="Record Job">📝</a> `;
+            } else if (job.record_tx) {
+              txLinks += `<a href="${SOLSCAN_TX}${job.record_tx}" target="_blank" class="tx-link" title="Record Job">📝</a> `;
+            }
+            if (solscan.settle) {
+              txLinks += `<a href="${solscan.settle}" target="_blank" class="tx-link" title="Settle Job">💰</a>`;
+            } else if (job.settle_tx) {
+              txLinks += `<a href="${SOLSCAN_TX}${job.settle_tx}" target="_blank" class="tx-link" title="Settle Job">💰</a>`;
+            }
+            
             row.innerHTML = `
               <td style="font-size:0.7rem">${job.timestamp?.substring(11, 19) || '--'}</td>
-              <td style="font-size:0.7rem">${job.machine_id?.substring(0, 6) || '--'}...</td>
-              <td>${econ.duration_seconds || '--'}s</td>
-              <td>${(econ.complexity_claimed || 0).toFixed(2)}</td>
+              <td style="font-size:0.7rem"><a href="${SOLSCAN_ACCOUNT}${machineId}" target="_blank" class="tx-link">${machineShort}...</a></td>
+              <td>${econ.duration_seconds || job.duration_seconds || '--'}s</td>
+              <td>${(econ.complexity_claimed || job.complexity_claimed || 0).toFixed(2)}</td>
               <td style="color:#888">${(econ.base_reward || 0).toFixed(3)}</td>
               <td style="color:#0ff;font-weight:bold">${(econ.final_reward || 0).toFixed(3)}</td>
               <td>
@@ -279,6 +323,7 @@
                 <div class="confidence-bar"><div class="confidence-fill ${confClass}" style="width:${conf}%"></div></div>
               </td>
               <td style="color:${actionColor}">${job.action || '--'}</td>
+              <td>${txLinks || '--'}</td>
             `;
           });
         }
