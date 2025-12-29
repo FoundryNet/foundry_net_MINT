@@ -1,0 +1,20 @@
+# Credentials
+.foundry_credentials.json
+.scout_env
+scout_config.env
+machine_id.json
+.env
+
+# Python
+__pycache__/
+*.egg-info/
+dist/
+build/
+*.pyc
+
+# Node
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
