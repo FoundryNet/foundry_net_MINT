@@ -23,18 +23,18 @@ from solders.instruction import Instruction, AccountMeta
 # ============================================
 # CONFIGURATION - UPDATE THESE FOR YOUR SETUP
 # ============================================
-
 PROGRAM_ID = Pubkey.from_string("4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL")
 STATE_ACCOUNT = Pubkey.from_string("2Lm7hrtqK9W5tykVu4U37nUNJiiFh6WQ1rD8ZJWXomr2")
-RPC_URL = "https://mainnet.helius-rpc.com/?api-key=2c13462d-4a64-4c5b-b410-1520219d73aa"
-
+RPC_URL = "https://api.mainnet-beta.solana.com"
 DEFAULT_CREDENTIAL_DIR = ".foundry"
 
-# Anchor instruction discriminators (first 8 bytes of sha256("global:<instruction_name>"))
+# Anchor instruction discriminators
+# SHA256("global:<snake_case_instruction_name>")[:8]
 DISCRIMINATORS = {
-    "register_machine": bytes([24, 158, 153, 66, 250, 167, 91, 28]),
-    "record_job": bytes([34, 137, 62, 98, 251, 75, 115, 28]),
+    "register_machine": bytes([168, 160, 68, 209, 28, 151, 41, 17]),
+    "record_job": bytes([54, 124, 168, 158, 236, 237, 107, 206]),
 }
+
 
 
 class FoundryClient:
