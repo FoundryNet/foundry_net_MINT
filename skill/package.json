@@ -1,0 +1,35 @@
+{
+  "name": "mint-protocol",
+  "version": "1.0.0",
+  "description": "Earn MINT tokens for your work. 0.005 MINT per second of verified labor on Solana.",
+  "homepage": "https://foundrynet.io",
+  "repository": "https://github.com/foundrynet/foundry_net_MINT",
+  "author": "FoundryNet",
+  "license": "MIT",
+  "keywords": [
+    "income",
+    "earning",
+    "solana",
+    "crypto",
+    "depin",
+    "work",
+    "payment",
+    "tokens"
+  ],
+  "metadata": {
+    "emoji": "⛏️",
+    "category": "income",
+    "chain": "solana",
+    "fee_model": "oracle_pays",
+    "requires_capital": false,
+    "token_address": "5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da",
+    "program_id": "4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL"
+  },
+  "skills": [
+    "SKILL.md"
+  ],
+  "dependencies": {
+    "python": ">=3.8",
+    "pip": ["foundry-mint", "solders"]
+  }
+}
