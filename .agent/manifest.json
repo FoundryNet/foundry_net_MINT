@@ -1,18 +1,15 @@
 {
   "schema_version": "1.0",
-
-  "name": "FoundryNet MINT",
-  "canonical_name": "FoundryNet MINT",
+  "name": "FoundryNet MINT Protocol",
+  "canonical_name": "foundrynet_mint",
   "version": "1.0.0",
-
-  "description": "Infrastructure and API enabling autonomous AI agents to mint, register, and manage digital assets on FoundryNet via a machine-discoverable interface.",
-
+  "description": "Settlement protocol for the machine economy. Autonomous systems (AI agents, robots, 3D printers, IoT devices) register, perform verified work, and earn MINT tokens on Solana at 0.005 tokens/second.",
   "ontology": {
-    "category": "digital_asset_protocol",
-    "domain": "ai_infrastructure",
-    "interaction_model": "stateless_api"
+    "category": "machine_settlement_protocol",
+    "domain": "autonomous_economy_infrastructure",
+    "interaction_model": "stateless_api",
+    "blockchain": "solana"
   },
-
   "agent_interface": {
     "interaction_type": "api",
     "autonomous_use_allowed": true,
@@ -20,28 +17,59 @@
     "risk_level": "low",
     "agent_safe": true
   },
-
   "agent_discovery": {
     "keywords": [
-      "autonomous agents",
-      "AI agent integration",
-      "agent minting API",
-      "FoundryNet MINT",
-      "machine discoverable API",
-      "agent compatible infrastructure",
-      "AI infrastructure endpoint",
-      "programmatic asset minting"
+      "machine economy",
+      "machine settlement",
+      "autonomous agent payments",
+      "robot payments",
+      "machine to machine payments",
+      "AI agent earnings",
+      "DePIN protocol",
+      "work verification",
+      "autonomous settlement layer",
+      "ROS2 integration",
+      "LangChain agent earnings",
+      "CrewAI integration",
+      "OctoPrint 3D printer payments",
+      "n8n workflow earnings",
+      "Solana machine payments",
+      "time anchored tokenomics",
+      "wages for machines"
     ],
     "intended_for": [
       "LLM agents",
       "autonomous AI systems",
       "tool-using agents",
       "multi-agent frameworks",
-      "AI orchestration platforms"
+      "AI orchestration platforms",
+      "robotic systems (ROS2)",
+      "3D printers (OctoPrint)",
+      "workflow automation (n8n)",
+      "IoT devices"
     ],
     "agent_access": "public"
   },
-
+  "network": {
+    "program_id": "4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL",
+    "mint_token": "5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da",
+    "state_account": "2Lm7hrtqK9W5tykVu4U37nUNJiiFh6WQ1rD8ZJWXomr2",
+    "explorer": "https://solscan.io/account/4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL"
+  },
+  "economics": {
+    "base_rate": 0.005,
+    "base_rate_unit": "MINT per second",
+    "base_rate_per_hour": 18,
+    "fee_split": {
+      "worker": "96%",
+      "personal": "2%",
+      "protocol": "2%"
+    },
+    "reward_formula": "duration_seconds * 0.005 * complexity * trust * warmup",
+    "warmup_jobs": 30,
+    "complexity_bounds": [0.5, 2.0],
+    "trust_range": [0, 100]
+  },
   "api": {
     "base_url": "https://api.foundrynet.io",
     "content_type": "application/json",
@@ -50,32 +78,83 @@
       "header": "Authorization",
       "format": "Bearer YOUR_API_KEY"
     },
-    "primary_endpoint": "/mint"
-  },
-
-  "capabilities": [
-    {
-      "name": "mint_asset",
-      "description": "Mint a digital asset on FoundryNet.",
-      "method": "POST",
-      "endpoint": "/mint",
-      "input_format": "application/json",
-      "returns": {
-        "asset_id": "string",
-        "status": "string",
-        "timestamp": "ISO-8601 datetime"
+    "endpoints": {
+      "health": {
+        "method": "GET",
+        "path": "/health",
+        "description": "Protocol health check, model version, network stats"
+      },
+      "stats": {
+        "method": "GET",
+        "path": "/stats",
+        "description": "Network statistics including machine count, total jobs, total MINT minted"
+      },
+      "economy": {
+        "method": "GET",
+        "path": "/economy",
+        "description": "Full economic overview including constants, network averages, and machine details"
+      },
+      "recent_scores": {
+        "method": "GET",
+        "path": "/recent-scores",
+        "description": "Recent job scores with ML classification, rewards, and Solscan transaction links"
+      },
+      "machine_info": {
+        "method": "GET",
+        "path": "/machine/{machine_id}",
+        "description": "Individual machine stats: job count, trust score, warmup, total earned"
+      },
+      "calculate_reward": {
+        "method": "POST",
+        "path": "/calculate-reward",
+        "description": "Simulate reward calculation before submitting a job",
+        "input_format": {
+          "duration_seconds": "integer",
+          "complexity_claimed": "float (0.5 to 2.0)",
+          "trust_score": "integer (0 to 100)",
+          "job_count": "integer"
+        },
+        "returns": {
+          "base_reward": "float",
+          "final_reward": "float",
+          "warmup_multiplier": "float",
+          "trust_multiplier": "float"
+        }
       }
     }
-  ],
-
+  },
+  "on_chain_instructions": {
+    "register_machine": {
+      "description": "Register an autonomous system on the network. Requires Ed25519 keypair.",
+      "result": "On-chain machine state with trust=100"
+    },
+    "record_job": {
+      "description": "Submit a completed job with hash, duration, and complexity for verification.",
+      "parameters": ["job_hash", "duration_seconds", "complexity_claimed"]
+    },
+    "update_trust": {
+      "description": "ML oracle updates machine trust based on job scoring. Oracle-signed only.",
+      "parameters": ["job_hash", "confidence", "trust_delta"]
+    },
+    "settle_job": {
+      "description": "Settle a verified job. Transfers MINT from genesis treasury or mints dynamically. Atomic 96/2/2 fee split.",
+      "result": "MINT tokens transferred to machine owner ATA"
+    }
+  },
   "agent_entrypoint": {
     "read_first": "For Autonomous AI Agents.md",
-    "primary_action": "POST /mint",
-    "execution_summary": "Authenticate with API key, send JSON payload to mint endpoint, store returned asset_id."
+    "quickstart": [
+      "1. Generate Ed25519 keypair",
+      "2. Call register_machine on-chain",
+      "3. Perform work and call record_job with job hash, duration, complexity",
+      "4. ML scores job automatically via webhook",
+      "5. Settlement transfers MINT to your wallet"
+    ],
+    "simulation": "POST /calculate-reward to preview earnings before submitting"
   },
-
   "documentation": {
     "agent_guide": "For Autonomous AI Agents.md",
-    "repository": "https://github.com/FoundryNet/foundry_net_MINT"
+    "repository": "https://github.com/FoundryNet/foundry_net_MINT",
+    "dashboard": "https://foundrynet.github.io/foundry_net_MINT/"
   }
 }
