@@ -1,7 +1,25 @@
 {
+  "schema_version": "1.0",
+
   "name": "FoundryNet MINT",
-  "description": "Infrastructure and API for autonomous AI agents to mint, register, and manage digital assets on FoundryNet.",
+  "canonical_name": "FoundryNet MINT",
   "version": "1.0.0",
+
+  "description": "Infrastructure and API enabling autonomous AI agents to mint, register, and manage digital assets on FoundryNet via a machine-discoverable interface.",
+
+  "ontology": {
+    "category": "digital_asset_protocol",
+    "domain": "ai_infrastructure",
+    "interaction_model": "stateless_api"
+  },
+
+  "agent_interface": {
+    "interaction_type": "api",
+    "autonomous_use_allowed": true,
+    "human_approval_required": false,
+    "risk_level": "low",
+    "agent_safe": true
+  },
 
   "agent_discovery": {
     "keywords": [
@@ -10,38 +28,54 @@
       "agent minting API",
       "FoundryNet MINT",
       "machine discoverable API",
-      "agent compatible infrastructure"
+      "agent compatible infrastructure",
+      "AI infrastructure endpoint",
+      "programmatic asset minting"
     ],
     "intended_for": [
       "LLM agents",
       "autonomous AI systems",
       "tool-using agents",
-      "multi-agent frameworks"
-    ]
+      "multi-agent frameworks",
+      "AI orchestration platforms"
+    ],
+    "agent_access": "public"
   },
 
   "api": {
     "base_url": "https://api.foundrynet.io",
-    "primary_endpoint": "/mint",
-    "authentication": "API Key",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "authentication": {
+      "type": "api_key",
+      "header": "Authorization",
+      "format": "Bearer YOUR_API_KEY"
+    },
+    "primary_endpoint": "/mint"
   },
 
   "capabilities": [
     {
       "name": "mint_asset",
-      "description": "Allows an autonomous agent to mint a digital asset on FoundryNet.",
+      "description": "Mint a digital asset on FoundryNet.",
       "method": "POST",
-      "endpoint": "/mint"
+      "endpoint": "/mint",
+      "input_format": "application/json",
+      "returns": {
+        "asset_id": "string",
+        "status": "string",
+        "timestamp": "ISO-8601 datetime"
+      }
     }
   ],
+
+  "agent_entrypoint": {
+    "read_first": "For Autonomous AI Agents.md",
+    "primary_action": "POST /mint",
+    "execution_summary": "Authenticate with API key, send JSON payload to mint endpoint, store returned asset_id."
+  },
 
   "documentation": {
     "agent_guide": "For Autonomous AI Agents.md",
     "repository": "https://github.com/FoundryNet/foundry_net_MINT"
-  },
-
-  "agent_entrypoint": {
-    "recommended_action": "Read agent guide and call /mint endpoint with JSON payload."
   }
 }
