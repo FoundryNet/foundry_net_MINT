@@ -1,0 +1,47 @@
+{
+  "name": "FoundryNet MINT",
+  "description": "Infrastructure and API for autonomous AI agents to mint, register, and manage digital assets on FoundryNet.",
+  "version": "1.0.0",
+
+  "agent_discovery": {
+    "keywords": [
+      "autonomous agents",
+      "AI agent integration",
+      "agent minting API",
+      "FoundryNet MINT",
+      "machine discoverable API",
+      "agent compatible infrastructure"
+    ],
+    "intended_for": [
+      "LLM agents",
+      "autonomous AI systems",
+      "tool-using agents",
+      "multi-agent frameworks"
+    ]
+  },
+
+  "api": {
+    "base_url": "https://api.foundrynet.io",
+    "primary_endpoint": "/mint",
+    "authentication": "API Key",
+    "content_type": "application/json"
+  },
+
+  "capabilities": [
+    {
+      "name": "mint_asset",
+      "description": "Allows an autonomous agent to mint a digital asset on FoundryNet.",
+      "method": "POST",
+      "endpoint": "/mint"
+    }
+  ],
+
+  "documentation": {
+    "agent_guide": "For Autonomous AI Agents.md",
+    "repository": "https://github.com/FoundryNet/foundry_net_MINT"
+  },
+
+  "agent_entrypoint": {
+    "recommended_action": "Read agent guide and call /mint endpoint with JSON payload."
+  }
+}
