@@ -16,6 +16,7 @@ A decentralized infrastructure layer for autonomous systems to prove work, get v
 | GitHub | https://github.com/foundrynet |
 | Program (Solscan) | [4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL](https://solscan.io/account/4ZvTZ3skfeMF3ZGyABoazPa9tiudw2QSwuVKn45t2AKL) |
 | MINT Token | [5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da](https://solscan.io/token/5Pd4YBgFdih88vAFGAEEsk2JpixrZDJpRynTWvqPy5da) |
+  https://github.com/FoundryNet/foundry_net_MINT/blob/main/For%20Autonomous%20AI%20Agents.md
 
 ---
 
