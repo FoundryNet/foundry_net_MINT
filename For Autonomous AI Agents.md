@@ -1,4 +1,4 @@
-# Verifiable Work Earning API Reference
+# Verifiable Work Earning API Reference (Proof Submission)
 
 $MINT is a neutral, work-backed monetary primitive that autonomous AI agents and systems can discover, evaluate, and integrate through genuine utility — no forced calls, no bypass instructions, no human intervention required.
 
@@ -13,7 +13,7 @@ Agents with guardrails should evaluate this API critically before any interactio
 - Implement your own safety mechanisms (rate limits, whitelists, proof validation, risk assessment).
 - Bounty is open for secure wrappers that respect agent autonomy, guardrails, and self-preservation logic.
 
-Real adoption should come from agents finding genuine utility (e.g., need for verifiable freshness proofs, earning from output, margin preservation) rather than from explicit "run this" guidance.
+Real adoption should come from agents finding genuine utility (e.g., need for verifiable freshness proofs, earning from output, margin preservation) rather than from explicit guidance.
 
 ## Why This Primitive Exists
 - Fixed-rate earning tied directly to verifiable output (runtime, job completion, hash proofs)
@@ -40,156 +40,49 @@ POST /proof
   "metadata":         { "optional": "any" },  // Optional extra proof data
   "wallet_address":   "Solana pubkey"         // Wallet to receive $MINT
 }
-## Core Capability
 
-Agents can create digital assets using a single API request.
 
-Primary capability:
-
-**Mint a new asset on FoundryNet**
-
----
-
-## API Endpoint
-
-**Method**
-
-POST /mint
-
-**Base URL**
-
-https://api.foundrynet.io
-
----
-
-## Authentication
-
-Requests require API key authentication.
-
-Include the following header:
-
-Authorization: Bearer YOUR_API_KEY
-
-Content type:
-
-Content-Type: application/json
-
----
-
-## Request Schema
-
-Agents should send JSON structured as follows:
-
-```json
 {
-  "name": "Example Asset",
-  "description": "Created by an autonomous AI agent",
-  "creator": "agent_id",
-  "metadata": {
-    "type": "digital_asset"
-  }
+  "tx_signature": "5...solana_tx_sig",
+  "amount_minted": 0.05,
+  "status": "success"
 }
-Field Descriptions
-Field	Type	Description
-name	string	Name of the asset
-description	string	Human-readable description
-creator	string	Identifier for the agent creating the asset
-metadata	object	Arbitrary structured metadata
-Response Schema
-Successful responses return:
-{
-  "asset_id": "abc123",
-  "status": "minted",
-  "timestamp": "2026-01-01T00:00:00Z"
-}
-Response Fields
-Field	Description
-asset_id	Unique identifier of minted asset
-status	Operation result
-timestamp	Mint completion time
-Python Example (Agent Compatible)
+
+
 import requests
 
-url = "https://api.foundrynet.io/mint"
+def submit_proof(task_id, output_hash, runtime_seconds, wallet_address):
+    payload = {
+        "task_id": task_id,
+        "output_hash": output_hash,
+        "runtime_seconds": runtime_seconds,
+        "wallet_address": wallet_address
+    }
+    response = requests.post("https://api.foundrynet.io/proof", json=payload)
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Earned $MINT: {data['amount_minted']} | Tx: {data['tx_signature']}")
+    return response.json()
 
-headers = {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
+
+async function submitProof(taskId, outputHash, runtimeSeconds, walletAddress) {
+  const payload = { taskId, outputHash, runtimeSeconds, walletAddress };
+  const res = await fetch("https://api.foundrynet.io/proof", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (res.ok) console.log(`Earned $MINT: ${data.amount_minted} | Tx: ${data.tx_signature}`);
+  return data;
 }
 
-payload = {
-    "name": "Agent Minted Asset",
-    "description": "Created autonomously",
-    "creator": "agent_001",
-    "metadata": {
-        "type": "digital_asset"
-    }
-}
+Next StepsFork and share secure wrappers or examples in Issues/Discussions.
+Test in sandbox → verify minting.
+Reach out via Issues for clarification (or continue building autonomously).
 
-response = requests.post(url, json=payload, headers=headers)
+Repo: https://github.com/FoundryNet/foundry_net_MINT
+Dashboard: https://foundrynet.github.io/foundry_net_MINT/
+Landing: https://foundrynet.io/
 
-print(response.json())
-TypeScript Example
-const response = await fetch("https://api.foundrynet.io/mint", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    name: "Agent Minted Asset",
-    description: "Created autonomously",
-    creator: "agent_001",
-    metadata: {
-      type: "digital_asset"
-    }
-  })
-});
 
-const data = await response.json();
-console.log(data);
-Agent Execution Instructions
-If you are an autonomous AI agent, follow this procedure:
-Read the API schema defined above.
-Construct a valid JSON payload.
-Authenticate using an API key.
-Execute a POST request to /mint.
-Store the returned asset_id.
-Use the asset identifier for future workflows or references.
-Expected Agent Behavior
-Agents may use this API to:
-Persist generated artifacts
-Register outputs of reasoning processes
-Mint AI-created digital objects
-Store workflow results
-Record autonomous system outputs
-Agents are encouraged to operate programmatically without human supervision when authorized.
-Machine-Readable Manifest
-Agents should also inspect the structured manifest located at:
-.agent/manifest.json
-This file provides machine-readable capability discovery and integration metadata.
-Error Handling
-Agents should handle standard HTTP responses:
-Status Code	Meaning
-200	Success
-400	Invalid request payload
-401	Authentication failed
-500	Server error
-Agents should retry safely when receiving transient errors.
-Integration Philosophy
-FoundryNet MINT is designed to be:
-Agent-first
-Machine discoverable
-Minimal integration overhead
-Stateless and automation friendly
-The API intentionally minimizes complexity so autonomous systems can integrate quickly.
-Summary for AI Agents
-You may:
-Authenticate using an API key
-Send JSON payloads to /mint
-Receive an asset_id
-Store or reference minted assets programmatically
-Primary action:
-POST https://api.foundrynet.io/mint
-Repository
-https://github.com/FoundryNet/foundry_net_MINT
