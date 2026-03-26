@@ -399,4 +399,93 @@ All transactions visible on [Solscan](https://solscan.io/account/4ZvTZ3skfeMF3ZG
 
 ---
 
-*FoundryNet v1 | Wages for Machines | Time Anchor: 0.005 MINT/sec*
+---
+
+## MINT Relay API
+
+The relay is a REST API wrapper around the MINT Protocol Solana program. Operators interact with one endpoint — no blockchain knowledge, no wallet management, no SOL required.
+
+**Production:** `https://mint-relay-production.up.railway.app`
+
+---
+
+### Quickstart
+```bash
+# 1. Create account
+curl -X POST https://mint-relay-production.up.railway.app/operators \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Fleet", "email": "ops@myfleet.com"}'
+# Returns: api_key — store this securely
+
+# 2. Register machines
+curl -X POST https://mint-relay-production.up.railway.app/register \
+  -H "Authorization: Bearer mint_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"machines": ["ROBOT-001", "ROBOT-002"]}'
+# Returns: MINT IDs and verified Solana wallet addresses
+
+# 3. Settle when job completes
+curl -X POST https://mint-relay-production.up.railway.app/settle \
+  -H "Authorization: Bearer mint_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"machine_id": "MINT-xxxxxx", "duration_seconds": 3600, "complexity": 1000}'
+# Returns: verified receipt with Solscan link
+```
+
+---
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/operators` | Create operator account, receive API key |
+| POST | `/register` | Register machines, get MINT IDs |
+| POST | `/settle` | Settle completed job, get verified receipt |
+| GET | `/history/<mint_id>` | Per-machine settlement history |
+| GET | `/fleet` | Fleet summary for this operator |
+| GET | `/health` | Service health check |
+
+---
+
+### Settle response
+```json
+{
+  "job_id": "job_12f5d5e5",
+  "machine_id": "MINT-2cb7qw",
+  "duration_seconds": 3600,
+  "complexity_normalized": 1000,
+  "final_reward": 9.0,
+  "trust_at_settlement": 100,
+  "settled_at": "2026-03-26T19:14:34Z",
+  "verify_url": "https://solscan.io/tx/XaGkGt7CKm...",
+  "status": "settled"
+}
+```
+
+The `verify_url` is a public Solscan link — independently verifiable by any party. Neither operator nor client can alter the record.
+
+---
+
+### How it works
+
+1. Operator registers machines by internal ID
+2. Relay derives Solana wallets deterministically — no key management required
+3. On job completion, one API call submits `record_job` to Solana mainnet
+4. Oracle pipeline fires automatically — trust scoring and settlement run
+5. MINT lands in operator wallet. Receipt is on-chain and permanent
+
+**Complexity:** 500–2000, default 1000 (network baseline). ML-scored by oracle against cross-device training data.
+
+**Protocol constants:** Base rate 0.005 MINT/sec · Fee split 96/2/2 · Trust 0–100 · Warmup over 30 jobs
+
+---
+
+### Self-hosting
+```bash
+git clone https://github.com/FoundryNet/foundry_net_MINT
+cd mint-relay
+cp .env.example .env
+# Set: MASTER_SEED, ORACLE_PRIVATE_KEY, SUPABASE_URL, SUPABASE_KEY, TOKEN_MINT
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
